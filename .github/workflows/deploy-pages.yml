@@ -8,6 +8,9 @@ on:
       - ".github/workflows/deploy-pages.yml"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: deploy-pages
   cancel-in-progress: true
@@ -15,11 +18,13 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: cloudflare-pages-production
     # Requires two repo secrets:
     #   CLOUDFLARE_API_TOKEN  (scoped to "Cloudflare Pages: Edit")
     #   CLOUDFLARE_ACCOUNT_ID
-    # And one optional repo variable:
-    #   VITE_API_BASE         (defaults to http://localhost:8000 if unset)
+    # And one required repo variable:
+    #   VITE_API_BASE         (the production backend URL)
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -35,8 +40,13 @@ jobs:
       - name: Build
         working-directory: frontend
         env:
-          VITE_API_BASE: ${{ vars.VITE_API_BASE || 'http://localhost:8000' }}
-        run: npm run build
+          VITE_API_BASE: ${{ vars.VITE_API_BASE }}
+        run: |
+          if [ -z "$VITE_API_BASE" ] || [[ "$VITE_API_BASE" == http://localhost* ]]; then
+            echo "::error::VITE_API_BASE must be a non-local production URL"
+            exit 1
+          fi
+          npm run build
 
       - name: Publish to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3

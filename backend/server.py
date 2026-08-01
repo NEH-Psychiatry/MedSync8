@@ -47,11 +47,55 @@ MAX_MESSAGES = int(os.environ.get("CHAT_MAX_MESSAGES", "50"))
 MAX_MESSAGE_CHARS = int(os.environ.get("CHAT_MAX_MESSAGE_CHARS", "20000"))
 
 
+def validate_runtime_security() -> None:
+    """Reject incomplete production configuration before serving traffic."""
+
+    app_env = os.environ.get("APP_ENV", "development").strip().lower()
+    if app_env not in {"development", "test", "production"}:
+        raise RuntimeError("APP_ENV must be development, test, or production")
+    if app_env != "production":
+        return
+
+    errors: list[str] = []
+    if not os.environ.get("ANTHROPIC_API_KEY", "").strip():
+        errors.append("ANTHROPIC_API_KEY is required")
+    if not os.environ.get("CF_ACCESS_TEAM_DOMAIN", "").strip():
+        errors.append("CF_ACCESS_TEAM_DOMAIN is required")
+    if not os.environ.get("CF_ACCESS_AUD", "").strip():
+        errors.append("CF_ACCESS_AUD is required")
+
+    audit_salt = os.environ.get("AUDIT_SALT", "").strip()
+    if not audit_salt or audit_salt == "medsync8-default-salt-change-me":
+        errors.append("a unique AUDIT_SALT is required")
+
+    origins = [
+        value.strip()
+        for value in os.environ.get("ALLOWED_ORIGINS", "").split(",")
+        if value.strip()
+    ]
+    if not origins:
+        errors.append("ALLOWED_ORIGINS must contain the production frontend origin")
+    elif any(
+        origin == "*"
+        or origin.startswith("http://localhost")
+        or origin.startswith("http://127.0.0.1")
+        or origin.endswith(".invalid")
+        or "replace-before-deploy" in origin
+        for origin in origins
+    ):
+        errors.append("ALLOWED_ORIGINS must not contain wildcards or local origins")
+
+    if errors:
+        raise RuntimeError("unsafe production configuration: " + "; ".join(errors))
+
+
 # ---------- lifecycle -------------------------------------------------------
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    validate_runtime_security()
+
     if not os.environ.get("ANTHROPIC_API_KEY"):
         log.warning("ANTHROPIC_API_KEY not set — /api/chat will fail")
 
