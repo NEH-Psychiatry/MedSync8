@@ -38,6 +38,39 @@ def test_health_reports_rag_enabled(client):
     assert "audit_salt_default" in body
 
 
+def test_production_configuration_fails_closed(monkeypatch):
+    monkeypatch.setenv("APP_ENV", "production")
+    for name in (
+        "ANTHROPIC_API_KEY",
+        "CF_ACCESS_TEAM_DOMAIN",
+        "CF_ACCESS_AUD",
+        "AUDIT_SALT",
+        "ALLOWED_ORIGINS",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    with pytest.raises(RuntimeError, match="unsafe production configuration"):
+        server_module.validate_runtime_security()
+
+
+def test_production_configuration_accepts_required_controls(monkeypatch):
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "synthetic-test-key")
+    monkeypatch.setenv("CF_ACCESS_TEAM_DOMAIN", "example-team")
+    monkeypatch.setenv("CF_ACCESS_AUD", "synthetic-audience")
+    monkeypatch.setenv("AUDIT_SALT", "synthetic-unique-audit-salt")
+    monkeypatch.setenv("ALLOWED_ORIGINS", "https://assistant.example.test")
+
+    server_module.validate_runtime_security()
+
+
+def test_development_configuration_remains_local(monkeypatch):
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.delenv("CF_ACCESS_AUD", raising=False)
+
+    server_module.validate_runtime_security()
+
+
 def test_chat_returns_reply_and_citations(client, stub_anthropic):
     r = client.post("/api/chat", json={
         "tool": "policy",
