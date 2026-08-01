@@ -14,6 +14,7 @@ primary_region = "ord"  # Chicago — matches user timezone, change if needed
   dockerfile = "Dockerfile"
 
 [env]
+  APP_ENV = "production"
   PORT = "8080"
   CORPUS_DIR = "/data/corpus"
   RAG_TOP_K = "4"
@@ -25,7 +26,9 @@ primary_region = "ord"  # Chicago — matches user timezone, change if needed
   # Audit log is written to the persistent volume so it survives deploys.
   AUDIT_LOG_PATH = "/data/audit.log"
   # Set ALLOWED_ORIGINS to your deployed frontend URL(s) before going live.
-  ALLOWED_ORIGINS = "http://localhost:5173"
+  # Replace this placeholder before deploy. The backend refuses to start in
+  # production with a wildcard or local origin.
+  ALLOWED_ORIGINS = "https://replace-before-deploy.invalid"
   # Set these via `fly secrets set` in production (never commit them):
   #   CF_ACCESS_TEAM_DOMAIN  (e.g. "acme" for acme.cloudflareaccess.com)
   #   CF_ACCESS_AUD          (Application AUD tag from the Access dashboard)
