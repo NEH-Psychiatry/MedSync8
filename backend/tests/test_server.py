@@ -152,3 +152,23 @@ def test_chat_writes_audit_event_without_query_text(client):
     assert leaky not in r2.text
     log_path = audit_module.get_logger().path
     assert leaky not in log_path.read_text(encoding="utf-8")
+
+
+def test_lifespan_survives_indexing_failure(monkeypatch, tmp_path):
+    """Regression: a transient embedding failure during startup must degrade to
+    no-RAG operation instead of crashing the server."""
+
+    class ExplodingEmbedder:
+        name = "stub:exploding"
+
+        def embed(self, texts):
+            raise RuntimeError("transient embed failure")
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-not-real")
+    monkeypatch.setattr(server_module, "build_embedder_from_env", ExplodingEmbedder)
+    audit_module.reset_for_tests(tmp_path / "audit.log")
+
+    with TestClient(server_module.app) as lifespan_client:
+        body = lifespan_client.get("/api/health").json()
+        assert body["ok"] is True
+        assert body["rag_enabled"] is False
