@@ -4,11 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - "src/**"
-      - "index.html"
-      - "vite.config.js"
-      - "package.json"
-      - "package-lock.json"
+      - "frontend/**"
       - ".github/workflows/deploy-pages.yml"
   workflow_dispatch:
 
@@ -19,18 +15,24 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Deploys frontend/ — the RAG client for the FastAPI backend (the root
+    # Express workbench is not deployed here).
     # Requires two repo secrets:
     #   CLOUDFLARE_API_TOKEN  (scoped to "Cloudflare Pages: Edit")
     #   CLOUDFLARE_ACCOUNT_ID
     # And one optional repo variable:
-    #   VITE_API_BASE         (defaults to http://localhost:8000 if unset)
+    #   VITE_API_BASE         (FastAPI base URL; defaults to http://localhost:8000)
+    defaults:
+      run:
+        working-directory: frontend
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "20"
           cache: npm
-          cache-dependency-path: package-lock.json
+          cache-dependency-path: frontend/package-lock.json
 
       - name: Install
         run: npm ci
@@ -45,4 +47,4 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy dist --project-name=medsync8-telepsych
+          command: pages deploy frontend/dist --project-name=medsync8-telepsych

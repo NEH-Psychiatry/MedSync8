@@ -13,6 +13,14 @@ npm run dev:server       # Express proxy only
 npm run build            # production build to dist/
 ```
 
+### RAG frontend (`frontend/` — Vite 7 + React 19, separate package.json)
+```bash
+cd frontend && npm ci      # own dependency tree
+npm run dev                # Vite dev server; set VITE_API_BASE to the FastAPI URL
+npm test                   # vitest (jsdom) — src/__tests__/App.test.jsx
+npm run lint && npm run build
+```
+
 ### Python Backend (FastAPI + RAG)
 ```bash
 pip install -r backend/requirements-test.txt   # test deps (no torch, fast install)
@@ -33,17 +41,17 @@ pip install -r mcp/requirements.txt && python3 mcp/cocm_billing_server.py   # MC
 ```
 
 ### CI
-CI runs on every PR and push to main: `pytest backend/tests tests -q` (Python 3.11) and `npm run build` (Node 20) in parallel. The root suite includes `tests/test_plugin_sync.py`, which fails if the plugin's vendored billing tracker drifts from `scripts/cocm_time_tracker.py`. All workflow actions are pinned to full-length commit SHAs; Dependabot bumps them weekly (`.github/dependabot.yml`).
+CI runs three jobs on every PR and push to main: `pytest backend/tests tests -q` (Python 3.11), the root workbench build, and `frontend/` lint + vitest + build (Node 20). The root suite includes `tests/test_cocm_time_tracker.py` (CMS boundaries, rule engine, provenance, and `mcp/evaluation.xml` derived from code) and `tests/test_plugin_sync.py`, which fails if the plugin's vendored tracker or MCP server drifts from the canonical copies. All workflow actions are pinned to full-length commit SHAs; Dependabot bumps them weekly (`.github/dependabot.yml`).
 
 ## Architecture
 
-Two server options exist, sharing the same React frontend and the same five tool system prompts. Both call `claude-opus-4-8` with adaptive thinking (`thinking: {type: "adaptive"}`); the text-block filtering in both paths silently drops thinking blocks.
+This is a **dual-app repository** — two independent React clients, two backends, sharing the same five tool system prompts. Both backends call `claude-opus-4-8` with adaptive thinking (`thinking: {type: "adaptive"}`); text-block filtering silently drops thinking blocks.
 
-**Express proxy (`server.js`, port 3001)** — lightweight dev/simple deployment path. Proxies requests to Anthropic API with rate limiting (20 req/min), message sanitization (50KB cap), and server-side API key. Vite proxies `/api` to this during development.
+**Workbench (root `src/` + `server.js`, port 3001)** — the Express-proxied Psychiatry AI Workbench. `server.js` proxies to the Anthropic API with rate limiting (20 req/min), message sanitization (50KB cap), server-side API key, and SSE streaming. Exposes `POST /api/claude`, `POST /api/claude/stream`, `GET /api/health`. Vite proxies `/api` to it during development. Not deployed by any workflow.
 
-**FastAPI backend (`backend/server.py`, port 8080)** — production path deployed via Azure Container Apps or Fly.io. Adds RAG retrieval over `corpus/` documents, Cloudflare Access JWT auth, and hash-only HIPAA-ready audit logging. The Dockerfile prefetches the bge-small-en-v1.5 embedding model (~130MB) at build time. `RUNBOOK.md` documents the PHI boundary — no PHI until BAA + local embeddings are confirmed.
+**RAG telepsychiatry assistant (`frontend/` + `backend/server.py`, port 8080)** — the production path. `frontend/` is a separate Vite/React app (own `package.json`, vitest suite, `Citations.jsx`) that calls the FastAPI backend at `VITE_API_BASE` and deploys to Cloudflare Pages (`deploy-pages.yml`). The backend adds RAG retrieval over `corpus/`, Cloudflare Access JWT auth, and hash-only audit logging, and is deployed via Azure Container Apps or Fly.io. It exposes `POST /api/chat` (non-streaming; returns `reply` + `citations`), `GET /api/health`, `GET /api/audit/recent` — it does **not** implement `/api/claude/stream`. The Dockerfile prefetches the bge-small-en-v1.5 embedding model (~130MB). `RUNBOOK.md` documents the PHI boundary — no PHI until BAA + local embeddings are confirmed.
 
-Both expose: `POST /api/claude` (or `/api/chat`), `POST /api/claude/stream`, `GET /api/health`.
+Do not remove either app as a "duplicate": the root workbench cannot render citations and the `frontend/` client cannot stream — they serve different backends.
 
 ### Frontend → Backend data flow
 1. `src/api.js` calls `/api/claude/stream` via SSE
@@ -57,7 +65,9 @@ Both expose: `POST /api/claude` (or `/api/chat`), `POST /api/claude/stream`, `GE
 `backend/auth.py`: Optional Cloudflare Access JWT verification (enabled when `CF_ACCESS_TEAM_DOMAIN` + `CF_ACCESS_AUD` are set). `backend/audit.py`: Append-only JSONL log recording salted hashed queries (never raw text), user identity, tool, latency, and citation count. Never log raw query text or weaken the salting.
 
 ### Clinical billing stack
-`scripts/cocm_time_tracker.py` is the **single source of billing truth**: CMS midpoint-rule eligibility (99492 ≥36, 99493 ≥31, 99494 at target+16 then every 30, G2214 ≥30, 99484 ≥20), the full code catalogue (including the CY2026 APCM add-ons G0568–G0570 — either/or with their mirror CPT codes, never both in one month, billing held pending MAC confirmation — and G0512, discontinued 2026-01-01), and a three-payer rate model (`medicare-natl`, `medicare-wi` GPCI-adjusted, `wi-medicaid` with `WI_MEDICAID_RATES_JSON` portal override). `mcp/cocm_billing_server.py` imports its functions directly and exposes them as six read-only MCP tools (registered in `.mcp.json` as `medsync8-billing`) — a threshold change in the script propagates to the CLI, MCP tools, and audits simultaneously. After any change to billing thresholds, the `billing-auditor` agent (`.claude/agents/billing-auditor.md`) re-runs boundary-value checks; use it proactively.
+`scripts/cocm_time_tracker.py` is the **single source of billing truth**: CMS midpoint-rule eligibility (99492 ≥36, 99493 ≥31, 99494 at target+16 then every 30, G2214 ≥30, 99484 ≥20), the code catalogue, and a three-payer rate model (`medicare-natl`, `medicare-wi` GPCI-adjusted, `wi-medicaid` with `WI_MEDICAID_RATES_JSON` portal override). **Billing rules are data, not prose**: each `BillingCode` carries `status` (active/hold/discontinued), `mirror_of`, `requires_any_of`, `exclusive_with`, `payers`, and `rate_source`; `price_claim()` / `claim_warnings()` enforce them and return `warnings` (mirror pair G-code + CPT, G2214 vs base, 99484 vs base, 99494 without base, APCM add-on without G0556–G0558, holds, discontinued). `rate_info()` is the provenance-carrying rate API; `get_rate`/`price_codes` are compatibility wrappers. The APCM add-ons G0568–G0570 are `hold` (pending written MAC confirmation) and Medicare-only; G0512 is `discontinued` (2026-01-01). Add a rule by setting a field on the code, never by writing a sentence in `notes`. `SOURCES` is the one citation list — every surface (CLI, `--list-codes`, MCP disclaimer) derives from it.
+
+`mcp/cocm_billing_server.py` imports the tracker directly and exposes six read-only MCP tools (registered in `.mcp.json` as `medsync8-billing`); the plugin vendors both files and CI enforces byte-identity. A change in the script propagates to the CLI, MCP tools, plugin, and audits simultaneously. After any change to billing thresholds or rules, the `billing-auditor` agent (`.claude/agents/billing-auditor.md`) re-runs boundary-value and rule-engine checks; use it proactively.
 
 `scripts/credentialing_alert.py` reads the licensing star-schema workbook and posts a ranked Teams MessageCard. Exit codes: 0 ok, 1 delivery failed, 2 workbook unreadable. Time-dependent logic takes `today: date` as a parameter — never call `date.today()` inside classification logic.
 

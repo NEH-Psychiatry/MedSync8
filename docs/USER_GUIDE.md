@@ -90,7 +90,7 @@ What it applies:
 | **G2214** | ≥ 30 min but base minimum unmet |
 | **99484** | General BHI — ≥ 20 min; never in the same month as 99492/99493 |
 
-The output includes `next_99494_at_min` — the minute count at which your next add-on unit unlocks — plus a plain-English note and the standing disclaimer (verify against the current CMS Physician Fee Schedule; source: CMS MLN909432, AIMS Center).
+The output includes `next_99494_at_min` — the minute count at which your next add-on unit unlocks — an `estimated_payment_usd` under the chosen `--payer` (medicare-natl, medicare-wi, wi-medicaid) with its `rate_confidence` and `rate_source`, and `warnings` whenever a claim breaks a catalogue rule: same-month exclusivity (99484 vs 99492/99493, G2214 vs a base code), a 99494 without its base code, or anything involving the CY2026 APCM add-ons **G0568/G0569/G0570** — which require an APCM base code, are *either/or* with their mirror CPT code, and are on **billing hold** pending written MAC confirmation. **G0512 was discontinued 2026-01-01**; RHC/FQHC settings bill the standard codes. A warned claim is still totaled so you can see the exposure, but must not be submitted. The standing disclaimer applies: verify against the current CMS Physician Fee Schedule and the ForwardHealth portal (sources: CMS MLN909432, CMS-1832-F, MM14315, NACHC APCM Tip Sheet, AIMS Center).
 
 An initiating visit (office E/M 99202–99215, AWV, Welcome to Medicare, TCM 99495/99496, or psychiatric eval 90791/90792) is required before the first CoCM/BHI month; run with `--initiating-visit no` to see the blocking message and valid visit list.
 
@@ -128,7 +128,7 @@ For Claude Code users: the repo ships a custom subagent at `.claude/agents/billi
 
 ## 4. Backends at a Glance
 
-Two interchangeable servers sit behind the same frontend:
+The repo is a dual-app layout: the root workbench (`src/` + `server.js`) and the RAG telepsychiatry assistant (`frontend/` + `backend/`). The `frontend/` client renders RAG citations and deploys to Cloudflare Pages (`VITE_API_BASE` points it at the FastAPI backend); run it with `cd frontend && npm install && npm run dev`, test with `npm test`.
 
 | | Express proxy (`server.js`) | FastAPI (`backend/server.py`) |
 |---|---|---|
