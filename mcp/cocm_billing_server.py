@@ -22,7 +22,10 @@ import sys
 from pathlib import Path
 from typing import Any, Literal
 
-from mcp.server.fastmcp import FastMCP
+try:
+    from mcp.server.fastmcp import FastMCP  # mcp 1.x
+except ModuleNotFoundError:  # mcp 2.x renamed FastMCP to MCPServer
+    from mcp.server.mcpserver import MCPServer as FastMCP
 from pydantic import BaseModel, ConfigDict, Field
 
 # Import the tracker as the single source of billing truth.

@@ -5,15 +5,15 @@
   </qa_pair>
   <qa_pair>
     <question>Under the medicare-wi payer model, what is the estimated payment in USD for an initial CoCM month where the patient accrued exactly 36 minutes with an initiating visit on file?</question>
-    <answer>154.22</answer>
+    <answer>152.62</answer>
   </qa_pair>
   <qa_pair>
     <question>What is the total modeled payment in USD at medicare-natl rates for a claim consisting of one 99492 and three units of 99494?</question>
-    <answer>372.0</answer>
+    <answer>344.7</answer>
   </qa_pair>
   <qa_pair>
     <question>A subsequent-month CoCM patient accrued exactly 30 minutes with an initiating visit on file. What is the estimated wi-medicaid rate in USD for the code this month qualifies for (no ForwardHealth override loaded)?</question>
-    <answer>47.6</answer>
+    <answer>42.55</answer>
   </qa_pair>
   <qa_pair>
     <question>What is the portal-verified Wisconsin Medicaid rate in USD for the BHIC medical home comprehensive care coordination and planning initial plan code?</question>
@@ -33,7 +33,7 @@
   </qa_pair>
   <qa_pair>
     <question>In USD, how much higher is the medicare-natl rate for 99492 than for 99493?</question>
-    <answer>32</answer>
+    <answer>15.36</answer>
   </qa_pair>
   <qa_pair>
     <question>According to the code catalogue, which APCM companion add-on code mirrors 99493 for subsequent CoCM months?</question>

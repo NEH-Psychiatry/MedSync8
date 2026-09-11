@@ -14,15 +14,21 @@ General BHI (non-CoCM Behavioral Health Integration):
   NOTE: 99484 cannot be billed in the same month as 99492 / 99493.
 
 RHC / FQHC setting:
-  G0512  Psychiatric CoCM in an RHC or FQHC (≥60 min; replaces 99492/99493)
+  G0512  DISCONTINUED 2026-01-01 — RHCs/FQHCs now report 99492/99493/99494/
+         G2214 individually and may apply the midpoint rule (50%+1).
 
 APCM companion add-ons (CY2026, patient must ALSO be enrolled in Advanced
 Primary Care Management G0556–G0558 with the same practitioner/month):
-  G0568  CoCM initial month add-on    (mirrors 99492)
-  G0569  CoCM subsequent month add-on (mirrors 99493)
-  G0570  General BHI add-on           (mirrors 99484)
-  NOTE: These are ADDITIONS finalized in CMS-1832-F — they did NOT replace
-  99492/99493/99494, despite widespread blog claims to the contrary.
+  G0568  CoCM initial month add-on    (crosswalks 99492, wRVU 1.88)
+  G0569  CoCM subsequent month add-on (crosswalks 99493, wRVU 2.05)
+  G0570  General BHI add-on           (crosswalks 99484, wRVU 0.93)
+  NOTE: Finalized in CMS-1832-F (90 FR 49266 §II.G) as additions to the code
+  set; the standalone codes remain active. But for the SAME patient-month,
+  the operating rule is EITHER the G-code OR its mirror CPT code — never
+  both (same work; duplicate-service audit risk). The supplement-vs-replace
+  question is unresolved in the CY2026 rule (NACHC: "CMS Clarification
+  Pending"); G-code billing is ON HOLD pending written MAC confirmation.
+  Not time-based — distinguished by model and episode month only.
 
 Valid initiating visits (required before any CoCM/BHI month):
   99202-99215  Office / outpatient E/M
@@ -101,27 +107,27 @@ COCM_CODES: list[BillingCode] = [
     BillingCode(
         "99492", "CoCM — initial calendar month", "CoCM",
         target_min=70, min_to_bill=36,
-        medicare_natl=162.00, rate_confidence="verified_secondary",
+        medicare_natl=160.32, rate_confidence="verified_secondary",
         notes="First month of CoCM enrollment only. Requires patient registry, "
               "care plan, and systematic caseload review by the supervising provider.",
     ),
     BillingCode(
         "99493", "CoCM — subsequent calendar month", "CoCM",
         target_min=60, min_to_bill=31,
-        medicare_natl=130.00, rate_confidence="verified_secondary",
+        medicare_natl=144.96, rate_confidence="verified_secondary",
         notes="Every month after the initial month.",
     ),
     BillingCode(
         "99494", "CoCM — each additional 30-min block (add-on ×N)", "CoCM",
         target_min=30, min_to_bill=16,
-        medicare_natl=70.00, rate_confidence="verified_secondary",
+        medicare_natl=61.46, rate_confidence="verified_secondary",
         notes="Add-on to 99492 or 99493. One unit per 30-min increment past the "
               "base target. No cap on number of units per month.",
     ),
     BillingCode(
         "G2214", "CoCM / BHI — shorter first- or subsequent-month service", "CoCM",
         target_min=30, min_to_bill=30,
-        medicare_natl=68.00, rate_confidence="estimated",
+        medicare_natl=60.79, rate_confidence="verified_secondary",
         notes="For patients with ≥30 min who don't meet the base code minimum. "
               "Cannot combine with 99492 / 99493 in the same month.",
     ),
@@ -131,7 +137,7 @@ BHI_CODES: list[BillingCode] = [
     BillingCode(
         "99484", "General BHI — per calendar month", "General BHI",
         target_min=20, min_to_bill=20,
-        medicare_natl=55.00, rate_confidence="estimated",
+        medicare_natl=57.78, rate_confidence="verified_secondary",
         notes="Non-CoCM path. BHI clinical staff ≥20 min/month. No registry or "
               "systematic caseload review required. Cannot bill 99484 and "
               "99492 / 99493 in the same month.",
@@ -140,32 +146,45 @@ BHI_CODES: list[BillingCode] = [
 
 FQHC_CODES: list[BillingCode] = [
     BillingCode(
-        "G0512", "Psychiatric CoCM furnished in an RHC or FQHC", "RHC/FQHC",
-        target_min=60, min_to_bill=60,
-        notes="RHC/FQHC settings bill G0512 instead of 99492/99493 (≥60 min of "
-              "BHCM time, initial or subsequent month). As of 2026, RHCs/FQHCs "
-              "may alternatively bill the standard CoCM codes and G2214. Rate "
-              "is setting-specific — not on the PFS.",
+        "G0512", "RHC/FQHC psychiatric CoCM — DISCONTINUED 2026-01-01", "RHC/FQHC",
+        target_min=None, min_to_bill=None,
+        notes="Discontinued effective 2026-01-01 (CY2026 final rule). RHCs and "
+              "FQHCs now report 99492/99493/99494/G2214 individually and may "
+              "apply the midpoint rule (50%+1) to those time-based codes. "
+              "Retained here for historical claims only.",
     ),
 ]
 
 APCM_ADDON_CODES: list[BillingCode] = [
     BillingCode(
-        "G0568", "APCM add-on — CoCM initial month (mirrors 99492)", "APCM add-on",
+        "G0568", "APCM add-on — CoCM initial month (crosswalks 99492, wRVU 1.88)",
+        "APCM add-on",
         target_min=None, min_to_bill=None,
+        medicare_natl=161.66, rate_confidence="verified_secondary",
         notes="CY2026. Billable only when an APCM base code (G0556–G0558) is "
-              "reported by the same practitioner in the same month. Monthly "
-              "bundle — not minute-thresholded like 99492.",
+              "reported by the same practitioner in the same month. NOT "
+              "time-based. Either/or rule: never report both the G-code and "
+              "its mirror CPT code for the same patient-month — same work, "
+              "duplicate-service audit risk. BILLING HOLD pending written MAC "
+              "confirmation (supplement-vs-replace unresolved in CY2026 rule).",
     ),
     BillingCode(
-        "G0569", "APCM add-on — CoCM subsequent month (mirrors 99493)", "APCM add-on",
+        "G0569", "APCM add-on — CoCM subsequent month (crosswalks 99493, wRVU 2.05)",
+        "APCM add-on",
         target_min=None, min_to_bill=None,
-        notes="CY2026. Same APCM-base requirement as G0568.",
+        medicare_natl=145.96, rate_confidence="verified_secondary",
+        notes="CY2026. Same APCM-base requirement, either/or rule, and MAC-"
+              "confirmation hold as G0568. Distinguished from G0568 by episode "
+              "month (initial vs subsequent), not time or complexity.",
     ),
     BillingCode(
-        "G0570", "APCM add-on — General BHI (mirrors 99484)", "APCM add-on",
+        "G0570", "APCM add-on — General BHI (crosswalks 99484, wRVU 0.93)",
+        "APCM add-on",
         target_min=None, min_to_bill=None,
-        notes="CY2026. Same APCM-base requirement as G0568.",
+        medicare_natl=57.78, rate_confidence="verified_secondary",
+        notes="CY2026. General BHI model — no psychiatric consultant. Same "
+              "APCM-base requirement, either/or rule, and MAC-confirmation "
+              "hold as G0568.",
     ),
 ]
 
@@ -368,11 +387,15 @@ def evaluate_cocm(minutes: int, month: str, initiating_visit: bool) -> dict[str,
         base_min_met=True,
         addon_30min_units=addon_units,
         next_99494_at_min=(next_threshold if minutes < next_threshold else None),
-        apcm_alternative=f"{apcm_alt} (only if patient is APCM-enrolled, G0556–G0558)",
-        rhc_fqhc_alternative=(
-            "G0512 (if furnished in an RHC/FQHC and ≥60 min)" if minutes >= 60 else None
+        apcm_alternative=(
+            f"{apcm_alt} — APCM-enrolled patients (G0556–G0558) ONLY; either/or "
+            f"with {base_code}, never both in the same month; billing hold "
+            "pending written MAC confirmation"
         ),
-        note="Midpoint rule satisfied for base code.",
+        note=(
+            "Midpoint rule satisfied for base code. RHC/FQHC settings bill "
+            "these same codes (G0512 discontinued 2026-01-01)."
+        ),
     )
     return result
 
@@ -394,7 +417,11 @@ def evaluate_bhi(minutes: int, initiating_visit: bool) -> dict[str, Any]:
     if minutes >= 20:
         result.update(
             eligible_code="99484",
-            apcm_alternative="G0570 (only if patient is APCM-enrolled, G0556–G0558)",
+            apcm_alternative=(
+                "G0570 — APCM-enrolled patients (G0556–G0558) ONLY; either/or "
+                "with 99484, never both in the same month; billing hold "
+                "pending written MAC confirmation"
+            ),
             note=(
                 f"{minutes} min meets the ≥20-min minimum for 99484 (General BHI). "
                 "Cannot bill 99484 in the same month as 99492 or 99493."
@@ -464,7 +491,7 @@ def print_rate_table() -> None:
     print("  Rate table (USD per unit — decision-support estimates)")
     print(f"{'─' * 72}")
     print(f"  {'Code':<8}{'Medicare natl':>14}{'Medicare WI*':>14}{'WI Medicaid**':>15}")
-    for c in COCM_CODES + BHI_CODES + WI_MEDICAID_BHIC_CODES:
+    for c in COCM_CODES + BHI_CODES + APCM_ADDON_CODES + WI_MEDICAID_BHIC_CODES:
         natl, _ = get_rate(c.code, "medicare-natl")
         wi, _ = get_rate(c.code, "medicare-wi")
         mcd, mcd_conf = get_rate(c.code, "wi-medicaid")
@@ -481,8 +508,10 @@ def print_rate_table() -> None:
         f"  ** ~ = estimated at {WI_MEDICAID_FACTOR:.0%} of national — UNVERIFIED. Real\n"
         "     amounts: ForwardHealth interactive Max Fee Schedule (physician\n"
         "     services — not the per-program PDFs); supply them via\n"
-        "     WI_MEDICAID_RATES_JSON to replace the estimate. G0512 and APCM\n"
-        "     add-on rates are setting-specific and not modeled."
+        "     WI_MEDICAID_RATES_JSON to replace the estimate.\n"
+        "     G0568/G0569/G0570: APCM-base required; either/or with mirror CPT\n"
+        "     code; BILLING HOLD pending written MAC confirmation.\n"
+        "     G0512 discontinued 2026-01-01. Sequestration not applied."
     )
 
 
@@ -495,7 +524,7 @@ def main() -> int:
         description="CoCM / BHI midpoint-rule billing eligibility (decision-support only)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
-            "Source: CMS MLN909432 · CMS-1832-F · AIMS Center Guide · CPT 2026\n"
+            "Source: CMS MLN909432 (Jan 2026) · CMS-1832-F (90 FR 49266) · MM14315 · NACHC APCM Tip Sheet (Mar 2026) · AIMS Center\n"
             "Disclaimer: Decision-support only. Verify against the current CMS fee\n"
             "schedule and the ForwardHealth portal before claim submission."
         ),
@@ -520,7 +549,7 @@ def main() -> int:
         print_code_catalogue()
         print_rate_table()
         print(
-            "\nSource: CMS MLN909432 · CMS-1832-F · AIMS Center Guide · CPT 2026"
+            "\nSource: CMS MLN909432 (Jan 2026) · CMS-1832-F (90 FR 49266) · MM14315 · NACHC APCM Tip Sheet (Mar 2026) · AIMS Center"
         )
         print("Disclaimer: Decision-support only. Verify against current CMS fee schedule.")
         return 0

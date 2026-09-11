@@ -1,3 +1,3 @@
 # MCP server dependencies (separate from backend/ — the billing server has
 # no FastAPI/RAG dependencies, only the MCP SDK plus the tracker's stdlib).
-mcp>=1.2
+mcp>=1.2  # 1.x and 2.x both supported (server has a FastMCP/MCPServer import shim)
