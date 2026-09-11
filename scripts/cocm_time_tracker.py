@@ -353,6 +353,9 @@ def get_rate(code: str, payer: str) -> tuple[float | None, str]:
     return info.rate_usd, info.confidence
 
 
+_CONFIDENCE_RANK = {"portal_verified": 0, "verified_secondary": 1, "estimated": 2, "": 3}
+
+
 @dataclass
 class ClaimPricing:
     payer: str
@@ -360,6 +363,18 @@ class ClaimPricing:
     total_usd: float | None = None
     unpriced_codes: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+
+    @property
+    def confidence(self) -> RateConfidence:
+        """Weakest confidence among priced lines — a claim is only as verified as its least-verified line."""
+        priced = [ln for ln in self.lines if ln.rate_usd is not None]
+        if not priced:
+            return ""
+        return max((ln.confidence for ln in priced), key=lambda c: _CONFIDENCE_RANK[c])
+
+    @property
+    def sources(self) -> str:
+        return " | ".join(dict.fromkeys(ln.source for ln in self.lines if ln.rate_usd is not None))
 
 
 def claim_warnings(codes: list[str]) -> list[str]:
@@ -667,12 +682,11 @@ def main() -> int:
     # Price the eligible codes under the selected payer model.
     if result.get("eligible_code"):
         pricing = price_claim(result["eligible_code"].split(" + "), args.payer)
-        first = pricing.lines[0]
         result["payer"] = args.payer
         if pricing.total_usd is not None:
             result["estimated_payment_usd"] = f"{pricing.total_usd:,.2f}"
-            result["rate_confidence"] = first.confidence
-            result["rate_source"] = first.source
+            result["rate_confidence"] = pricing.confidence
+            result["rate_source"] = pricing.sources
         if pricing.unpriced_codes:
             result["unpriced_codes"] = ", ".join(pricing.unpriced_codes)
         if pricing.warnings:

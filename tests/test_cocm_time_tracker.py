@@ -104,6 +104,13 @@ def test_clean_claim_has_no_warnings_and_totals():
     assert price_codes(["99493", "99494", "99494"], "medicare-natl")[0] == p.total_usd
 
 
+def test_claim_confidence_is_weakest_line():
+    # 99492 (verified_secondary) + a wi-medicaid estimate line → estimated overall
+    assert price_claim(["99492"], "medicare-natl").confidence == "verified_secondary"
+    assert price_claim(["99492", "99494"], "medicare-wi").confidence == "estimated"
+    assert price_claim(["G0512"], "medicare-natl").confidence == ""
+
+
 def test_discontinued_is_distinguishable_from_unknown():
     d = rate_info("G0512", "medicare-natl")
     u = rate_info("ZZZZ", "medicare-natl")

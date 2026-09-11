@@ -59,12 +59,11 @@ def _json(payload: dict[str, Any]) -> str:
 def _attach_pricing(result: dict[str, Any], payer: str) -> dict[str, Any]:
     if result.get("eligible_code"):
         pricing = price_claim(result["eligible_code"].split(" + "), payer)
-        first = pricing.lines[0]
         result["payer"] = payer
         if pricing.total_usd is not None:
             result["estimated_payment_usd"] = pricing.total_usd
-            result["rate_confidence"] = first.confidence
-            result["rate_source"] = first.source
+            result["rate_confidence"] = pricing.confidence  # weakest line
+            result["rate_source"] = pricing.sources
         if pricing.unpriced_codes:
             result["unpriced_codes"] = pricing.unpriced_codes
         if pricing.warnings:
