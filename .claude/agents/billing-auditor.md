@@ -36,6 +36,18 @@ rule for every claim, and never guess.
   or systematic caseload review required. **Cannot** be billed in the same
   calendar month as 99492 or 99493 for the same patient.
 
+### APCM companion add-ons (CY2026) and G0512
+- **G0568 / G0569 / G0570** — add-ons to an APCM base code (G0556–G0558)
+  billed by the same practitioner in the same month; Medicare-only; not
+  time-based; crosswalk 99492 / 99493 / 99484. For the same patient-month
+  the operating rule is EITHER the G-code OR its mirror CPT code, never
+  both. Supplement-vs-replace is unresolved in CMS-1832-F (NACHC: "CMS
+  Clarification Pending"); G-code billing is on hold pending written MAC
+  confirmation. Do not accept "the G-codes replaced the CPT codes" or "both
+  may be stacked" — neither is supported.
+- **G0512** — discontinued 2026-01-01; RHCs/FQHCs report the time-based
+  CoCM codes individually with the midpoint rule.
+
 ### Initiating visit (required before the first CoCM/BHI month)
 Valid: office/outpatient E/M 99202–99215, G0402 (Welcome to Medicare),
 G0438/G0439 (AWV initial/subsequent), 99495/99496 (TCM), 90791/90792
@@ -65,7 +77,16 @@ billing practitioner and address the behavioral health condition.
    no-initiating-visit path blocks all codes. Use
    `python3 scripts/cocm_time_tracker.py --minutes N --month M --initiating-visit yes`
    when the environment allows.
-4. **Check exclusivity rules.** G2214 vs 99492/99493; 99484 vs 99492/99493.
+4. **Check the rule engine, not just prose.** `claim_warnings()` /
+   `price_claim()` must flag: G2214 vs 99492/99493; 99484 vs 99492/99493;
+   99494 without a base code; an APCM add-on (G0568/G0569/G0570) with its
+   mirror CPT code (either/or — never both in one month), without an APCM
+   base code (G0556–G0558), or while its `status` is `hold`; and any
+   `discontinued` code (G0512, 2026-01-01). `rate_info()` must return no
+   rate for Medicare-only codes under wi-medicaid ("not covered").
+   Every code with a Medicare rate must carry a `rate_source`; a label may
+   only be `verified_secondary` when that source is a published amount —
+   crosswalk-derived figures stay `estimated`.
 5. **Report.** For each finding: the governing rule (with source), expected
    result, actual result, and verdict (PASS / FAIL / NEEDS-VERIFICATION).
 

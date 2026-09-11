@@ -1,0 +1,14 @@
+# Cloudflare Pages config.
+# Deploy via `npx wrangler pages deploy frontend/dist --project-name medsync8-telepsych`
+# or by connecting the GitHub repo at https://dash.cloudflare.com (Pages > Create project).
+name = "medsync8-telepsych"
+compatibility_date = "2025-01-01"
+pages_build_output_dir = "dist"
+
+# Build settings (used by wrangler; dashboard mirrors these):
+#   Root directory:       frontend
+#   Build command:        npm ci && npm run build
+#   Build output dir:     dist
+#   Node version:         20
+#   Environment variables:
+#     VITE_API_BASE       https://medsync8-telepsych.fly.dev  (or your backend URL)

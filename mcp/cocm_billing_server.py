@@ -33,18 +33,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from cocm_time_tracker import (  # noqa: E402
     ALL_CODES,
     CODE_MAP,
+    DISCLAIMER as TRACKER_DISCLAIMER,
     PAYERS,
+    SOURCE_LINE,
+    THRESHOLD_CONFIDENCE,
     evaluate_bhi,
     evaluate_cocm,
-    get_rate,
-    price_codes,
+    price_claim,
+    rate_info,
 )
 
-DISCLAIMER = (
-    "Decision-support only. Verify against the current CMS Physician Fee "
-    "Schedule and the ForwardHealth portal before claim submission. "
-    "Source: CMS MLN909432; CMS-1832-F; AIMS Center."
-)
+# Single provenance string, derived from the tracker's SOURCES.
+DISCLAIMER = f"{TRACKER_DISCLAIMER} {SOURCE_LINE}."
 
 Payer = Literal["medicare-natl", "medicare-wi", "wi-medicaid"]
 
@@ -58,16 +58,30 @@ def _json(payload: dict[str, Any]) -> str:
 
 def _attach_pricing(result: dict[str, Any], payer: str) -> dict[str, Any]:
     if result.get("eligible_code"):
-        codes = result["eligible_code"].split(" + ")
-        total, unpriced = price_codes(codes, payer)
-        _, confidence = get_rate(codes[0], payer)
+        pricing = price_claim(result["eligible_code"].split(" + "), payer)
+        first = pricing.lines[0]
         result["payer"] = payer
-        if total is not None:
-            result["estimated_payment_usd"] = total
-            result["rate_confidence"] = confidence
-        if unpriced:
-            result["unpriced_codes"] = unpriced
+        if pricing.total_usd is not None:
+            result["estimated_payment_usd"] = pricing.total_usd
+            result["rate_confidence"] = first.confidence
+            result["rate_source"] = first.source
+        if pricing.unpriced_codes:
+            result["unpriced_codes"] = pricing.unpriced_codes
+        if pricing.warnings:
+            result["warnings"] = pricing.warnings
+    result["threshold_confidence"] = THRESHOLD_CONFIDENCE
     return result
+
+
+def _line(info: Any) -> dict[str, Any]:
+    return {
+        "code": info.code,
+        "rate_usd": info.rate_usd,
+        "rate_confidence": info.confidence or None,
+        "status": info.status,
+        "rate_source": info.source or None,
+        "note": info.note,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -181,13 +195,16 @@ def billing_evaluate_cocm(params: CocmInput) -> str:
     Applies 99492 (initial, >=36 min), 99493 (subsequent, >=31 min), 99494
     add-on units (first at target+16, then every 30 min), and G2214 (>=30 min
     when the base minimum is unmet). Returns the eligible code combination,
-    add-on unit count, the minute threshold for the next 99494 unit, APCM and
-    RHC/FQHC alternatives where relevant, and a payment estimate under the
-    selected payer model.
+    add-on unit count, the minute threshold for the next 99494 unit, the APCM
+    add-on alternative (apcm_alternative — only for APCM-enrolled patients;
+    either/or with the CPT code, currently on billing hold), a payment
+    estimate under the selected payer model, and any rule warnings. RHC/FQHC
+    settings bill these same codes (G0512 was discontinued 2026-01-01).
 
     Returns:
         str: JSON with eligible_code, addon_30min_units, next_99494_at_min,
-             estimated_payment_usd, rate_confidence, note, disclaimer.
+             apcm_alternative, estimated_payment_usd, rate_confidence,
+             rate_source, warnings, note, threshold_confidence, disclaimer.
     """
     result = evaluate_cocm(params.minutes, params.month, params.initiating_visit)
     return _json(_attach_pricing(result, params.payer))
@@ -232,13 +249,17 @@ def billing_list_codes(params: ListCodesInput) -> str:
     """List the supported CoCM/BHI billing code catalogue, optionally by category.
 
     Categories: 'CoCM' (99492/99493/99494/G2214), 'General BHI' (99484),
-    'RHC/FQHC' (G0512), 'APCM add-on' (G0568/G0569/G0570), 'WI Medicaid BHIC'
-    (H0038/S0280/S0281 — portal-verified ForwardHealth rates), 'Initiating'
-    (valid initiating-visit codes).
+    'RHC/FQHC' (G0512 — DISCONTINUED 2026-01-01, historical only), 'APCM
+    add-on' (G0568/G0569/G0570 — status 'hold', Medicare-only, either/or with
+    their mirror CPT code), 'WI Medicaid BHIC' (H0038/S0280/S0281 —
+    portal-verified ForwardHealth rates), 'Initiating' (valid initiating-visit
+    codes). Each entry carries its status, rule fields (mirror_of,
+    requires_any_of, exclusive_with, payers) and rate provenance.
 
     Returns:
         str: JSON list of codes with description, category, minute thresholds,
-             Medicare national rate where modeled, and notes.
+             status/status_note, rule fields, rates, rate_confidence,
+             rate_source, and notes.
     """
     codes = [c for c in ALL_CODES if params.category is None or c.category == params.category]
     return _json({
@@ -248,11 +269,18 @@ def billing_list_codes(params: ListCodesInput) -> str:
                 "code": c.code,
                 "description": c.description,
                 "category": c.category,
+                "status": c.status,
+                "status_note": c.status_note or None,
                 "target_min": c.target_min,
                 "min_to_bill": c.min_to_bill,
                 "medicare_natl_usd": c.medicare_natl,
                 "wi_medicaid_usd": c.wi_medicaid,
                 "rate_confidence": c.rate_confidence or None,
+                "rate_source": c.rate_source or None,
+                "mirror_of": c.mirror_of,
+                "requires_any_of": list(c.requires_any_of) or None,
+                "exclusive_with": list(c.exclusive_with) or None,
+                "payers": list(c.payers),
                 "notes": c.notes or None,
             }
             for c in codes
@@ -278,8 +306,10 @@ def billing_get_rate(params: GetRateInput) -> str:
     (ForwardHealth portal values where loaded, otherwise a labeled estimate).
 
     Returns:
-        str: JSON with code, payer, rate_usd (null if not modeled), and
-             rate_confidence. If the code is unknown, lists valid codes.
+        str: JSON with code, payer, rate_usd (null when discontinued, not
+             covered under the payer, or not modeled — see note), rate_confidence,
+             status (active|hold|discontinued), rate_source, and note. If the
+             code is unknown, lists valid codes.
     """
     code = params.code.upper() if params.code[0].isalpha() else params.code
     if code not in CODE_MAP:
@@ -288,13 +318,8 @@ def billing_get_rate(params: GetRateInput) -> str:
             "valid_codes": sorted(CODE_MAP.keys()),
             "suggestion": "Use billing_list_codes to browse the catalogue.",
         })
-    rate, confidence = get_rate(code, params.payer)
-    return _json({
-        "code": code,
-        "payer": params.payer,
-        "rate_usd": rate,
-        "rate_confidence": confidence or ("not modeled for this payer" if rate is None else None),
-    })
+    info = rate_info(code, params.payer)
+    return _json({"payer": params.payer, **_line(info)})
 
 
 @mcp.tool(
@@ -312,10 +337,16 @@ def billing_price_claim(params: PriceClaimInput) -> str:
 
     Repeat a code for multiple units (e.g., ['99493', '99494', '99494'] for a
     subsequent month with two add-on blocks). Codes without a modeled rate are
-    returned in unpriced_codes rather than silently dropped.
+    returned in unpriced_codes rather than silently dropped. Catalogue rules
+    are enforced: warnings are returned for codes on billing hold or
+    discontinued, missing prerequisites (e.g. 99494 without a base code, an
+    APCM add-on without G0556–G0558), and same-month exclusivity violations
+    (e.g. 99492 + G0568, 99492 + G2214, 99484 + 99493). A claim with warnings
+    is still totaled so the exposure is visible, but must not be submitted.
 
     Returns:
-        str: JSON with per-code lines, total_usd, unpriced_codes, disclaimer.
+        str: JSON with per-code lines (rate, confidence, status, source, note),
+             total_usd, unpriced_codes, warnings, disclaimer.
     """
     unknown = [c for c in params.codes if c not in CODE_MAP]
     if unknown:
@@ -324,16 +355,13 @@ def billing_price_claim(params: PriceClaimInput) -> str:
             "valid_codes": sorted(CODE_MAP.keys()),
             "suggestion": "Use billing_list_codes to browse the catalogue.",
         })
-    lines = []
-    for c in params.codes:
-        rate, confidence = get_rate(c, params.payer)
-        lines.append({"code": c, "rate_usd": rate, "rate_confidence": confidence or None})
-    total, unpriced = price_codes(params.codes, params.payer)
+    pricing = price_claim(params.codes, params.payer)
     return _json({
         "payer": params.payer,
-        "lines": lines,
-        "total_usd": total,
-        "unpriced_codes": unpriced or None,
+        "lines": [_line(i) for i in pricing.lines],
+        "total_usd": pricing.total_usd,
+        "unpriced_codes": pricing.unpriced_codes or None,
+        "warnings": pricing.warnings or None,
     })
 
 
@@ -378,10 +406,12 @@ def billing_evaluate_panel(params: PanelInput) -> str:
             codes = code.split(" + ")
             for c in codes:
                 tally[c] = tally.get(c, 0) + 1
-            total, _ = price_codes(codes, params.payer)
-            if total is not None:
-                entry["estimated_payment_usd"] = total
-                revenue += total
+            pricing = price_claim(codes, params.payer)
+            if pricing.total_usd is not None:
+                entry["estimated_payment_usd"] = pricing.total_usd
+                revenue += pricing.total_usd
+            if pricing.warnings:
+                entry["warnings"] = pricing.warnings
         elif not p.initiating_visit:
             blocked += 1
             entry["action"] = "document a qualifying initiating visit"

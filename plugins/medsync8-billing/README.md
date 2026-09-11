@@ -30,4 +30,4 @@ Requires `python3` with the `mcp` package (`pip install mcp`).
 
 ## Disclaimer
 
-Decision-support only. Verify against the current CMS Physician Fee Schedule and the ForwardHealth portal before claim submission. Source: CMS MLN909432 · CMS-1832-F · AIMS Center.
+Decision-support only. Verify against the current CMS Physician Fee Schedule and the ForwardHealth portal before claim submission. Sources: CMS MLN909432 (Jan 2026) · CMS-1832-F (90 FR 49266) · MM14315 · NACHC APCM Tip Sheet (Mar 2026) · AIMS Center. Tool responses carry `warnings` for holds, discontinued codes, missing prerequisites, and same-month exclusivity — a warned claim must not be submitted.
