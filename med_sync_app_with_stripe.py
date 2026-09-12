@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 def init_supabase():
-    from supabase import create_client, Client
+    from supabase import create_client
     url = os.environ.get("SUPABASE_URL", "")
     key = os.environ.get("SUPABASE_KEY", "")
     if not url or not key:

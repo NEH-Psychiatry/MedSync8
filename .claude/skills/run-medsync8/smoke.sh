@@ -18,8 +18,12 @@ cleanup() {
 trap cleanup EXIT
 
 echo "=== Installing dependencies ==="
-pip install -q -r "$APP_DIR/requirements.txt" 2>&1 | tail -1
-pip install -q pytest 2>&1 | tail -1
+# Debian images ship a PyJWT without a RECORD file; pip cannot uninstall it
+# and aborts the whole install. Reinstall it standalone first, then proceed.
+pip install -q --ignore-installed pyjwt >/dev/null 2>&1 || true
+pip install -q -r "$APP_DIR/requirements.txt" >/dev/null 2>&1 || { echo "FAIL: pip install -r requirements.txt"; pip install -r "$APP_DIR/requirements.txt" 2>&1 | tail -5; exit 1; }
+pip install -q pytest >/dev/null 2>&1 || { echo "FAIL: pip install pytest"; exit 1; }
+echo "Dependencies OK"
 
 echo "=== Running unit tests ==="
 (cd "$APP_DIR" && python -m pytest tests/ -v) || { echo "FAIL: tests"; exit 1; }

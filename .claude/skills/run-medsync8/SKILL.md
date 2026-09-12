@@ -1,50 +1,71 @@
 ---
 name: run-medsync8
-description: Run, test, and smoke-test the MedSync8 Streamlit medication sync calculator app. Use when asked to "run medsync", "start the app", "test medsync", or "smoke test".
+description: Run, test, and smoke-test the MedSync8 repo — the legacy Streamlit medication sync calculator plus the FastAPI/RAG backend and React frontend of the telepsychiatry assistant. Use when asked to "run medsync", "start the app", "test medsync", "run the backend tests", or "smoke test".
 ---
 
-MedSync8 is a Streamlit web app for calculating medication synchronization schedules with Supabase auth and Stripe payments. It's driven headless via HTTP since Streamlit renders client-side over WebSocket — `curl` verifies the server is alive and serving, while unit tests cover the `calculate_sync_quantities` business logic directly.
+MedSync8 holds two application tracks (see `README.md`):
 
-All paths below are relative to the project root (`/home/user/MedSync8`).
+1. **Legacy Streamlit medication sync calculator** — `med_sync_app_with_stripe.py` (UI) + `sync_calculator.py` (pure business logic). Supabase auth, Stripe payment link.
+2. **Telepsychiatry assistant** — `backend/` (FastAPI + RAG retriever + Anthropic proxy) and `frontend/` (React + Vite).
+
+The smoke driver in this skill covers track 1 end-to-end. Track 2 is covered by its own test suites (commands below). Streamlit renders client-side over WebSocket, so the driver verifies the server headlessly via HTTP while unit tests exercise `calculate_sync_quantities` directly.
+
+All paths below are relative to the project root.
 
 ## Prerequisites
 
 ```bash
+pip install --ignore-installed pyjwt   # Debian PyJWT has no RECORD file; pip aborts without this
 pip install -r requirements.txt
-pip install pytest
+pip install pytest flake8
 ```
 
-## Run (agent path) — smoke script
+## Run (agent path) — smoke script for the Streamlit calculator
 
-The smoke script installs deps, runs all unit tests, launches the Streamlit server, verifies HTTP health + main page + config endpoint, then stops it. One command:
+Installs deps, runs the calculator unit tests, launches Streamlit headless, verifies `/_stcore/health`, `/` and `/_stcore/host-config`, then stops it:
 
 ```bash
 .claude/skills/run-medsync8/smoke.sh
 ```
 
-Optional: pass a port number (default 8501):
+Optional port argument (default 8501):
 
 ```bash
 .claude/skills/run-medsync8/smoke.sh 8502
 ```
 
-The script sets dummy env vars (`SUPABASE_URL`, `SUPABASE_KEY`, `STRIPE_PAYMENT_LINK`) if not already set, so it works without real credentials. The app will start and serve the login page — auth calls will fail against dummy credentials, but the server and UI render correctly.
+The script sets dummy `SUPABASE_URL`, `SUPABASE_KEY`, `STRIPE_PAYMENT_LINK` if unset, so it works without real credentials. The login page renders; auth calls would fail against the dummy project, which is expected.
 
-Exit code 0 = all checks passed. Non-zero = something broke; output shows which check failed.
+Exit code 0 = all checks passed. Non-zero = the failing check is printed.
 
-## Direct invocation — testing the core logic
+## Direct invocation — calculator logic
 
-Most PRs touch `calculate_sync_quantities` in `med_sync_app_with_stripe.py`. Test it directly without launching the server:
+Most calculator PRs touch `sync_calculator.py`. Its tests import it directly (no Streamlit, no Supabase, no env vars needed):
 
 ```bash
-SUPABASE_URL="https://test.supabase.co" SUPABASE_KEY="test-key" python -m pytest tests/ -v
+python -m pytest tests -q
 ```
 
-The test file mocks `streamlit` and `supabase` at the module level before importing, so no real connections are made.
+Lint the root Python files:
 
-## Run (human path) — interactive
+```bash
+flake8 med_sync_app_with_stripe.py sync_calculator.py tests/
+```
 
-For local development with real credentials:
+## Backend and frontend (telepsychiatry assistant)
+
+```bash
+pip install -r backend/requirements-test.txt   # stub embedder; skips torch
+python -m pytest backend/tests -q
+```
+
+```bash
+cd frontend && npm ci && npm run test && npm run build
+```
+
+Run the backend locally with `uvicorn backend.server:app --reload --port 8000` (copy `backend/.env.example` to `backend/.env` first).
+
+## Run (human path) — interactive Streamlit
 
 ```bash
 export SUPABASE_URL="https://your-project.supabase.co"
@@ -53,14 +74,14 @@ export STRIPE_PAYMENT_LINK="https://buy.stripe.com/your-link"
 streamlit run med_sync_app_with_stripe.py
 ```
 
-Opens browser to `http://localhost:8501`. Requires real Supabase credentials for login/signup to work.
+Opens `http://localhost:8501`. Login/signup need a real Supabase project.
 
 ## Gotchas
 
-- **Streamlit is a WebSocket SPA.** `curl` gets the HTML shell but not rendered content. You cannot fill forms or click buttons via HTTP. The health endpoint (`/_stcore/health`) and HTTP 200 on `/` confirm the server is alive and the app loaded without Python errors.
-- **Module-level side effects.** `med_sync_app_with_stripe.py` runs Streamlit widget code at import time (not inside `if __name__ == '__main__'`). Tests must mock `streamlit` and `supabase` and set env vars *before* importing the module.
-- **`datetime.today()` includes time.** The app normalizes to midnight via `.replace(hour=0, minute=0, second=0, microsecond=0)`. If you're writing new tests with date math, compute expected values the same way — raw `datetime.today()` will be off by up to a day.
-- **PyJWT conflict on Debian.** `pip install` may fail with "Cannot uninstall PyJWT" — fix with `pip install --ignore-installed pyjwt` first, then re-run `pip install -r requirements.txt`.
+- **Streamlit is a WebSocket SPA.** `curl` gets the HTML shell only. You cannot fill forms over HTTP. `/_stcore/health` returning `ok` plus HTTP 200 on `/` confirms the server started and the script imported without Python errors.
+- **App entry point is guarded.** `med_sync_app_with_stripe.py` runs everything from `main()` under `if __name__ == "__main__"`, and `init_supabase()` imports the Supabase client lazily. Importing the module in tests is safe.
+- **`datetime.today()` includes time.** `sync_calculator.py` normalizes today to midnight. When writing tests with date math, expected values must use the same normalization or they will be off by up to a day.
+- **PyJWT conflict on Debian.** `pip install -r requirements.txt` fails with "Cannot uninstall PyJWT 2.7.0, RECORD file not found". Run `pip install --ignore-installed pyjwt` first. The smoke script and the SessionStart hook already do this.
 - **No `origin/HEAD` by default.** If git commands fail with "ambiguous argument 'origin/HEAD'", run `git remote set-head origin main`.
 
 ## Troubleshooting
@@ -69,6 +90,6 @@ Opens browser to `http://localhost:8501`. Requires real Supabase credentials for
 |---|---|
 | `ModuleNotFoundError: No module named 'streamlit'` | `pip install -r requirements.txt` |
 | `Cannot uninstall PyJWT 2.7.0, RECORD file not found` | `pip install --ignore-installed pyjwt` then retry |
-| `Missing SUPABASE_URL or SUPABASE_KEY` and app stops | Set env vars or use the smoke script which provides dummy values |
-| Tests fail with `ValueError: not enough values to unpack` | Ensure `st_mock.tabs.return_value = (MagicMock(), MagicMock())` is set before import |
-| Tests off by 1 day on unit counts | Use `datetime.today().replace(hour=0, minute=0, second=0, microsecond=0)` for today in expected calculations |
+| `Missing SUPABASE_URL or SUPABASE_KEY` and app stops | Set env vars, or use the smoke script which provides dummy values |
+| Tests off by 1 day on unit counts | Normalize "today" to midnight in expected-value math, as `sync_calculator.py` does |
+| `flake8: F401 ... imported but unused` in the app | Remove the import; the app only needs `create_client` from `supabase` |
