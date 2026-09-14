@@ -15,8 +15,12 @@ venv/
 .venv/
 env/
 
-# IDE
-.vscode/
+# IDE (keep shared VS Code workspace config; ignore personal files)
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
 .idea/
 *.swp
 *.swo

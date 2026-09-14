@@ -1,0 +1,61 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Backend: install test deps",
+      "type": "shell",
+      "command": "pip install -r backend/requirements-test.txt",
+      "problemMatcher": []
+    },
+    {
+      "label": "Backend: pytest",
+      "type": "shell",
+      "command": "python -m pytest backend/tests -q",
+      "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "Frontend: install",
+      "type": "shell",
+      "command": "npm ci",
+      "options": { "cwd": "${workspaceFolder}/frontend" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Frontend: lint",
+      "type": "shell",
+      "command": "npm run lint",
+      "options": { "cwd": "${workspaceFolder}/frontend" },
+      "problemMatcher": ["$eslint-stylish"]
+    },
+    {
+      "label": "Frontend: test",
+      "type": "shell",
+      "command": "npm run test",
+      "options": { "cwd": "${workspaceFolder}/frontend" },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Frontend: build",
+      "type": "shell",
+      "command": "npm run build",
+      "options": { "cwd": "${workspaceFolder}/frontend" },
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Legacy calculator: unittest",
+      "type": "shell",
+      "command": "python -m unittest discover tests -v",
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "All checks (CI parity)",
+      "dependsOrder": "sequence",
+      "dependsOn": ["Backend: pytest", "Frontend: lint", "Frontend: test", "Frontend: build"],
+      "problemMatcher": []
+    }
+  ]
+}

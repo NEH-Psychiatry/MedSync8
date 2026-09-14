@@ -17,6 +17,17 @@ MedSync8 currently contains **two application tracks**:
 - `/tests` — legacy calculator unit tests
 - `/med_sync_app_with_stripe.py`, `/sync_calculator.py` — legacy Streamlit app
 
+## Open in VS Code
+
+The repository ships a shared workspace configuration under `.vscode/`:
+
+- **Recommended extensions** — Python, Pylance, ESLint, and Vitest Explorer (VS Code offers them on first open).
+- **Debug configurations** (Run and Debug panel) — `Backend: FastAPI (uvicorn)`, `Frontend: Vite dev server`, `Backend: pytest`, and a `Full stack: backend + frontend` compound that starts both.
+- **Tasks** (Terminal → Run Task) — install, lint, test, and build tasks per app, plus `All checks (CI parity)` mirroring the CI pipeline.
+- **Test discovery** — pytest is preconfigured against `backend/tests`; create the venv at `backend/.venv` (as in the quick start below) and VS Code picks it up.
+
+A dev container (`.devcontainer/`) provisions Python 3.11 + Node 20 with both apps' dependencies preinstalled, for Codespaces or the Dev Containers extension.
+
 ## Quick start: telepsychiatry assistant (frontend + backend)
 
 ### Backend
