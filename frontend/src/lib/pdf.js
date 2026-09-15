@@ -1,9 +1,14 @@
+export function escapeHtml(value) {
+  return String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 export function exportToPDF(title, content) {
-  const escaped = content.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const safeTitle = escapeHtml(title);
+  const escaped = escapeHtml(content);
   const win = window.open("", "_blank");
   if (!win) return;
   win.document.write(`<!DOCTYPE html><html><head>
-    <title>${title}</title>
+    <title>${safeTitle}</title>
     <style>
       body { font-family: Georgia, serif; max-width: 820px; margin: 40px auto; padding: 0 32px; color: #1a1a2e; line-height: 1.8; }
       h1 { font-size: 22px; border-bottom: 2px solid #2C5F8A; padding-bottom: 10px; color: #1A3D5C; }
@@ -12,7 +17,7 @@ export function exportToPDF(title, content) {
       @media print { body { margin: 20px; } }
     </style>
     </head><body>
-    <h1>${title}</h1>
+    <h1>${safeTitle}</h1>
     <div class="meta">Generated: ${new Date().toLocaleDateString()} &middot; Nuestra Esperanza Health &middot; AI-assisted draft &mdash; clinical review required</div>
     <pre>${escaped}</pre>
     </body></html>`);

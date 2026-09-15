@@ -27,27 +27,28 @@ export function useChat({ activeTool, onError }) {
     localStorage.setItem("saved_responses", JSON.stringify(savedResponses));
   }, [savedResponses]);
 
-  async function sendMessage(text) {
+  async function sendMessage(text, tool = activeTool) {
     if (!text.trim() || loading) return;
 
     const userMsg = { role: "user", content: text };
-    const updated = [...currentConvo, userMsg];
-    setConversations((p) => ({ ...p, [activeTool]: updated }));
+    const updated = [...conversations[tool], userMsg];
+    setConversations((p) => ({ ...p, [tool]: updated }));
     setInput("");
     setLoading(true);
 
+    // Append against current state, not the pre-request snapshot: if the
+    // conversation was cleared while the request was in flight, drop the reply.
+    const appendReply = (assistantMsg) =>
+      setConversations((p) =>
+        p[tool].includes(userMsg) ? { ...p, [tool]: [...p[tool], assistantMsg] } : p,
+      );
+
     try {
-      const { reply, citations } = await callBackend(activeTool, updated);
-      setConversations((p) => ({
-        ...p,
-        [activeTool]: [...updated, { role: "assistant", content: reply, citations }],
-      }));
+      const { reply, citations } = await callBackend(tool, updated);
+      appendReply({ role: "assistant", content: reply, citations });
     } catch (e) {
       onError?.(e.message);
-      setConversations((p) => ({
-        ...p,
-        [activeTool]: [...updated, { role: "assistant", content: `⚠️ Error: ${e.message}` }],
-      }));
+      appendReply({ role: "assistant", content: `⚠️ Error: ${e.message}` });
     } finally {
       setLoading(false);
     }
@@ -55,7 +56,7 @@ export function useChat({ activeTool, onError }) {
 
   function saveResponse(content, toolId) {
     const entry = {
-      id: Date.now(),
+      id: crypto.randomUUID(),
       tool: toolId,
       toolLabel: TOOLS.find((t) => t.id === toolId)?.label,
       content,
