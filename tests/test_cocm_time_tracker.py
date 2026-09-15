@@ -74,6 +74,28 @@ def test_apcm_alternative_derived_from_catalogue():
     assert "G0512" not in evaluate_cocm(72, "initial", True)["note"]
 
 
+def test_apcm_enrolled_path_selects_g_code_with_cpt_alternative():
+    r = evaluate_cocm(116, "subsequent", True, apcm_enrolled=True)
+    assert r["eligible_code"] == "G0569" and r["cpt_alternative"] == "99493 + 99494 + 99494"
+    assert r["mode"].endswith("(APCM pathway)") and "not time-based" in r["note"].lower()
+    assert "apcm_alternative" not in r and "next_99494_at_min" not in r
+    p = price_claim([r["eligible_code"]], "medicare-natl")
+    assert p.total_usd == 145.96 and any("billing hold" in w for w in p.warnings)
+    b = evaluate_bhi(24, True, apcm_enrolled=True)
+    assert b["eligible_code"] == "G0570" and b["cpt_alternative"] == "99484"
+
+
+@pytest.mark.parametrize("minutes,month,expected", [(35, "initial", "G2214"), (29, "initial", None)])
+def test_apcm_enrolled_is_conservatively_gated_below_threshold(minutes, month, expected):
+    r = evaluate_cocm(minutes, month, True, apcm_enrolled=True)
+    assert r["eligible_code"] == expected and "not recommended this month" in r["note"]
+    assert evaluate_bhi(19, True, apcm_enrolled=True)["eligible_code"] is None
+
+
+def test_apcm_flag_never_changes_no_initiating_visit_result():
+    assert evaluate_cocm(120, "initial", False, apcm_enrolled=True)["eligible_code"] is None
+
+
 # ---------------------------------------------------------------------------
 # Rule engine
 # ---------------------------------------------------------------------------

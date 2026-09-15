@@ -5,6 +5,19 @@ carry their own in-file changelog (`.github/copilot-instructions.md`).
 
 ## Unreleased — branch `claude/update-codebase-vA58U`
 
+### Billing model — plugin 1.1.0
+- **APCM-enrolled pathway.** `--apcm-enrolled yes` (CLI), `apcm_enrolled`
+  (MCP inputs and panel patients) evaluates a patient receiving APCM
+  (G0556–G0558) from the same practitioner: the eligible code becomes the
+  G0568/G0569/G0570 add-on with `cpt_alternative` carrying the CPT set;
+  below the CPT midpoint minimum the G-code is conservatively not
+  recommended. Pricing still returns the hold and APCM-base warnings.
+- Tests added for `scripts/credentialing_alert.py` (bands, date coercion,
+  workbook loading with real openpyxl tables, Teams delivery with a mocked
+  transport, exit codes) and for the MCP tool layer (contracts, warnings,
+  validation, `evaluation.xml` through the tools). `openpyxl` and `mcp`
+  added to `backend/requirements-test.txt`.
+
 ### Billing model (`scripts/cocm_time_tracker.py`, MCP tools, plugin)
 - **Rules are now enforced, not just described.** `BillingCode` carries
   `status` (active/hold/discontinued), `mirror_of`, `requires_any_of`,

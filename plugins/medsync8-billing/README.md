@@ -4,7 +4,7 @@ CoCM/BHI billing decision support for Claude Code, packaged as one installable p
 
 ## What you get
 
-- **MCP server** (`medsync8-billing`) — six read-only tools: `billing_evaluate_cocm`, `billing_evaluate_bhi`, `billing_list_codes`, `billing_get_rate`, `billing_price_claim`, `billing_evaluate_panel`.
+- **MCP server** (`medsync8-billing`) — six read-only tools: `billing_evaluate_cocm`, `billing_evaluate_bhi`, `billing_list_codes`, `billing_get_rate`, `billing_price_claim`, `billing_evaluate_panel`. Evaluators accept `apcm_enrolled` for the G0568/G0569/G0570 pathway; every pricing tool returns rule `warnings`.
 - **`/billing-check` command** — one-line eligibility and pricing checks.
 - **`billing-auditor` agent** — adversarial boundary-value audit of billing logic against CMS MLN909432.
 - **`cocm-billing` skill** — routes billing questions to the tools instead of model memory.

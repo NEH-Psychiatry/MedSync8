@@ -103,6 +103,10 @@ class CocmInput(BaseModel):
     initiating_visit: bool = Field(
         ..., description="True if a qualifying initiating visit is on file (99202-99215, G0402, G0438/G0439, 99495/99496, 90791/90792)",
     )
+    apcm_enrolled: bool = Field(
+        default=False,
+        description="True if the patient receives Advanced Primary Care Management (G0556-G0558) from the same practitioner this month — selects the G0568/G0569 add-on pathway instead of 99492/99493 (either/or, never both)",
+    )
     payer: Payer = Field(
         default="medicare-natl",
         description="Rate model for the payment estimate",
@@ -116,6 +120,7 @@ class BhiInput(BaseModel):
 
     minutes: int = Field(..., ge=0, le=1440, description="Accrued BHI clinical-staff minutes this calendar month")
     initiating_visit: bool = Field(..., description="True if a qualifying initiating visit is on file")
+    apcm_enrolled: bool = Field(default=False, description="True if the patient receives APCM (G0556-G0558) from the same practitioner — selects the G0570 add-on pathway instead of 99484")
     payer: Payer = Field(default="medicare-natl", description="Rate model for the payment estimate")
 
 
@@ -162,6 +167,7 @@ class PanelPatient(BaseModel):
         default=None, description="Required when mode='cocm'; ignored for bhi",
     )
     initiating_visit: bool = Field(default=True, description="Qualifying initiating visit on file")
+    apcm_enrolled: bool = Field(default=False, description="Patient receives APCM (G0556-G0558) this month — use the G-code add-on pathway")
 
 
 class PanelInput(BaseModel):
@@ -205,7 +211,9 @@ def billing_evaluate_cocm(params: CocmInput) -> str:
              apcm_alternative, estimated_payment_usd, rate_confidence,
              rate_source, warnings, note, threshold_confidence, disclaimer.
     """
-    result = evaluate_cocm(params.minutes, params.month, params.initiating_visit)
+    result = evaluate_cocm(
+        params.minutes, params.month, params.initiating_visit, apcm_enrolled=params.apcm_enrolled
+    )
     return _json(_attach_pricing(result, params.payer))
 
 
@@ -230,7 +238,7 @@ def billing_evaluate_bhi(params: BhiInput) -> str:
         str: JSON with eligible_code, estimated_payment_usd, rate_confidence,
              note, disclaimer.
     """
-    result = evaluate_bhi(params.minutes, params.initiating_visit)
+    result = evaluate_bhi(params.minutes, params.initiating_visit, apcm_enrolled=params.apcm_enrolled)
     return _json(_attach_pricing(result, params.payer))
 
 
@@ -395,9 +403,9 @@ def billing_evaluate_panel(params: PanelInput) -> str:
             if p.month is None:
                 per_patient.append({"patient_id": p.patient_id, "error": "month required for cocm mode"})
                 continue
-            r = evaluate_cocm(p.minutes, p.month, p.initiating_visit)
+            r = evaluate_cocm(p.minutes, p.month, p.initiating_visit, apcm_enrolled=p.apcm_enrolled)
         else:
-            r = evaluate_bhi(p.minutes, p.initiating_visit)
+            r = evaluate_bhi(p.minutes, p.initiating_visit, apcm_enrolled=p.apcm_enrolled)
         code = r.get("eligible_code")
         entry = {"patient_id": p.patient_id, "eligible_code": code, "minutes": p.minutes}
         if code:

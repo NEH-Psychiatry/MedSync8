@@ -448,8 +448,31 @@ def _apcm_alternative(base_code: str) -> str | None:
     )
 
 
-def evaluate_cocm(minutes: int, month: str, initiating_visit: bool) -> dict[str, Any]:
-    """Return the highest supported CoCM code set for the given month's minutes."""
+def _apcm_path(base_code: str, cpt_codes: list[str]) -> dict[str, Any]:
+    """Result fields for an APCM-enrolled patient: the G-code add-on instead of the CPT set."""
+    g = APCM_MIRROR[base_code]
+    return {
+        "eligible_code": g,
+        "cpt_alternative": " + ".join(cpt_codes),
+        "note": (
+            f"APCM-enrolled: {g} is the monthly add-on to the APCM base code "
+            f"({'/'.join(APCM_BASE_CODES)}), which must be on the same claim. Not "
+            f"time-based — no 99494 units. Conservatively gated on the {base_code} "
+            f"midpoint minimum. Never also report {base_code} this month. "
+            f"{CODE_MAP[g].status_note}."
+        ),
+    }
+
+
+def evaluate_cocm(
+    minutes: int, month: str, initiating_visit: bool, apcm_enrolled: bool = False
+) -> dict[str, Any]:
+    """Return the highest supported CoCM code set for the given month's minutes.
+
+    apcm_enrolled=True selects the APCM add-on pathway (G0568/G0569) for
+    patients receiving Advanced Primary Care Management from the same
+    practitioner; the CPT set is returned as cpt_alternative.
+    """
     month = month.strip().lower()
     if month not in ("initial", "subsequent"):
         raise ValueError("--month must be 'initial' or 'subsequent'")
@@ -469,7 +492,11 @@ def evaluate_cocm(minutes: int, month: str, initiating_visit: bool) -> dict[str,
     base_code, target, base_min = (
         ("99492", 70, 36) if month == "initial" else ("99493", 60, 31)
     )
-    result: dict[str, Any] = {"mode": "CoCM", "accrued_minutes": minutes, "month": month}
+    result: dict[str, Any] = {
+        "mode": "CoCM (APCM pathway)" if apcm_enrolled else "CoCM",
+        "accrued_minutes": minutes,
+        "month": month,
+    }
 
     if minutes < base_min:
         if minutes >= 30:
@@ -488,6 +515,11 @@ def evaluate_cocm(minutes: int, month: str, initiating_visit: bool) -> dict[str,
                     f"(need ≥{base_min} min for {base_code}, ≥30 min for G2214)."
                 ),
             )
+        if apcm_enrolled:
+            result["note"] += (
+                f" APCM-enrolled, but {APCM_MIRROR[base_code]} is conservatively gated "
+                f"on the {base_code} minimum and is not recommended this month."
+            )
         return result
 
     # Base code met — tally add-on 99494 units.
@@ -498,6 +530,10 @@ def evaluate_cocm(minutes: int, month: str, initiating_visit: bool) -> dict[str,
 
     codes = [base_code] + ["99494"] * addon_units
     next_threshold = target + 16 + addon_units * 30
+
+    if apcm_enrolled:
+        result.update(base_min_met=True, **_apcm_path(base_code, codes))
+        return result
 
     result.update(
         eligible_code=" + ".join(codes),
@@ -510,9 +546,14 @@ def evaluate_cocm(minutes: int, month: str, initiating_visit: bool) -> dict[str,
     return result
 
 
-def evaluate_bhi(minutes: int, initiating_visit: bool) -> dict[str, Any]:
-    """Return eligibility for General BHI (99484)."""
-    result: dict[str, Any] = {"mode": "General BHI (non-CoCM)", "accrued_minutes": minutes}
+def evaluate_bhi(
+    minutes: int, initiating_visit: bool, apcm_enrolled: bool = False
+) -> dict[str, Any]:
+    """Return eligibility for General BHI (99484), or G0570 when apcm_enrolled."""
+    result: dict[str, Any] = {
+        "mode": "General BHI (APCM pathway)" if apcm_enrolled else "General BHI (non-CoCM)",
+        "accrued_minutes": minutes,
+    }
 
     if not initiating_visit:
         return {
@@ -525,6 +566,9 @@ def evaluate_bhi(minutes: int, initiating_visit: bool) -> dict[str, Any]:
         }
 
     if minutes >= 20:
+        if apcm_enrolled:
+            result.update(_apcm_path("99484", ["99484"]))
+            return result
         result.update(
             eligible_code="99484",
             apcm_alternative=_apcm_alternative("99484"),
@@ -536,7 +580,9 @@ def evaluate_bhi(minutes: int, initiating_visit: bool) -> dict[str, Any]:
     else:
         result.update(
             eligible_code=None,
-            note=f"{minutes} min does not meet the ≥20-min minimum for 99484.",
+            note=f"{minutes} min does not meet the ≥20-min minimum for 99484."
+            + (" APCM-enrolled, but G0570 is conservatively gated on the 99484 "
+               "minimum and is not recommended this month." if apcm_enrolled else ""),
         )
     return result
 
@@ -652,6 +698,11 @@ def main() -> int:
     ap.add_argument("--month", help="cocm mode only: initial | subsequent")
     ap.add_argument("--initiating-visit", help="yes | no")
     ap.add_argument(
+        "--apcm-enrolled", default="no",
+        help="yes | no (default no): patient receives APCM (G0556–G0558) from the same "
+             "practitioner this month — selects the G0568/G0569/G0570 add-on pathway",
+    )
+    ap.add_argument(
         "--payer", choices=PAYERS, default="medicare-natl",
         help="Rate model for estimated payment (default: medicare-natl)",
     )
@@ -670,14 +721,16 @@ def main() -> int:
     if args.initiating_visit is None:
         ap.error("--initiating-visit is required")
 
-    iv = args.initiating_visit.strip().lower() in ("yes", "y", "true", "1")
+    _yes = ("yes", "y", "true", "1")
+    iv = args.initiating_visit.strip().lower() in _yes
+    apcm = args.apcm_enrolled.strip().lower() in _yes
 
     if args.mode == "bhi":
-        result = evaluate_bhi(args.minutes, iv)
+        result = evaluate_bhi(args.minutes, iv, apcm_enrolled=apcm)
     else:
         if not args.month:
             ap.error("--month (initial | subsequent) is required in cocm mode")
-        result = evaluate_cocm(args.minutes, args.month, iv)
+        result = evaluate_cocm(args.minutes, args.month, iv, apcm_enrolled=apcm)
 
     # Price the eligible codes under the selected payer model.
     if result.get("eligible_code"):

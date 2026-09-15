@@ -23,6 +23,7 @@ returned as `warnings`.
 | Question shape | Tool |
 |---|---|
 | "Can we bill X for N minutes?" (CoCM) | `billing_evaluate_cocm` (minutes, month=initial\|subsequent, initiating_visit) |
+| Patient receives APCM (G0556–G0558) from the same practitioner | same tools with `apcm_enrolled: true` — result is the G-code add-on, `cpt_alternative` shows the CPT set, hold warning still applies |
 | General BHI / 99484 track | `billing_evaluate_bhi` |
 | "What codes exist / what's the threshold / what's the status of…" | `billing_list_codes` (category filter) |
 | "What does code X pay under payer Y?" | `billing_get_rate` |
