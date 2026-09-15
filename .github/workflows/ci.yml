@@ -27,6 +27,25 @@ jobs:
       - name: Test
         run: python -m pytest backend/tests -q
 
+  calculator:
+    name: Legacy calculator (pytest + flake8)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest flake8
+      - name: Lint
+        run: flake8 med_sync_app_with_stripe.py sync_calculator.py tests/
+      - name: Test
+        run: python -m pytest tests -q
+
   frontend:
     name: Frontend (build)
     runs-on: ubuntu-latest
