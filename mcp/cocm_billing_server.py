@@ -130,7 +130,7 @@ class ListCodesInput(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
 
     category: (
-        Literal["CoCM", "General BHI", "RHC/FQHC", "APCM add-on", "WI Medicaid BHIC", "Initiating"] | None
+        Literal["CoCM", "General BHI", "RHC/FQHC", "APCM add-on", "APCM base", "WI Medicaid BHIC", "Initiating"] | None
     ) = Field(default=None, description="Filter to one category; omit for the full catalogue")
 
 

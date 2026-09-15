@@ -214,6 +214,20 @@ APCM_ADDON_CODES: list[BillingCode] = [
     ),
 ]
 
+# APCM base codes — catalogued so claim_warnings() recognizes a correctly
+# formed APCM claim (G-code + base). APCM valuation is out of scope: no rate.
+APCM_BASE_CODE_ENTRIES: list[BillingCode] = [
+    BillingCode("G0556", "APCM — one or fewer chronic conditions, per month", "APCM base",
+                None, None, payers=MEDICARE_PAYERS,
+                notes="Prerequisite base code for G0568–G0570. Rate not modeled."),
+    BillingCode("G0557", "APCM — two or more chronic conditions, per month", "APCM base",
+                None, None, payers=MEDICARE_PAYERS,
+                notes="Prerequisite base code for G0568–G0570. Rate not modeled."),
+    BillingCode("G0558", "APCM — QMB with two or more chronic conditions, per month",
+                "APCM base", None, None, payers=MEDICARE_PAYERS,
+                notes="Prerequisite base code for G0568–G0570. Rate not modeled."),
+]
+
 # ForwardHealth BHIC contract rows (portal extract, effective 2014-04-01,
 # no end date; provider types 11/801-803; rate type MAXFEE). This is WI
 # Medicaid's integrated-care billing pathway — distinct from the CPT CoCM
@@ -259,7 +273,7 @@ INITIATING_VISIT_CODES: list[BillingCode] = [
 ]
 
 ALL_CODES = (
-    COCM_CODES + BHI_CODES + FQHC_CODES + APCM_ADDON_CODES
+    COCM_CODES + BHI_CODES + FQHC_CODES + APCM_ADDON_CODES + APCM_BASE_CODE_ENTRIES
     + WI_MEDICAID_BHIC_CODES + INITIATING_VISIT_CODES
 )
 CODE_MAP: dict[str, BillingCode] = {c.code: c for c in ALL_CODES}
@@ -448,17 +462,30 @@ def _apcm_alternative(base_code: str) -> str | None:
     )
 
 
+APCM_GATE_POLICY = (
+    "practice policy, stricter than CMS-1832-F (which sets no minute requirement "
+    "for the APCM add-ons); revisit when written MAC confirmation arrives"
+)
+
+
+def _apcm_gate_text(base_code: str) -> str:
+    bc = CODE_MAP[base_code]
+    kind = "minimum" if base_code == "99484" else "midpoint minimum"
+    return f"the {base_code} {kind} ({bc.min_to_bill} min)"
+
+
 def _apcm_path(base_code: str, cpt_codes: list[str]) -> dict[str, Any]:
     """Result fields for an APCM-enrolled patient: the G-code add-on instead of the CPT set."""
     g = APCM_MIRROR[base_code]
+    addon = "" if base_code == "99484" else " No 99494 units on this pathway."
     return {
         "eligible_code": g,
         "cpt_alternative": " + ".join(cpt_codes),
         "note": (
             f"APCM-enrolled: {g} is the monthly add-on to the APCM base code "
             f"({'/'.join(APCM_BASE_CODES)}), which must be on the same claim. Not "
-            f"time-based — no 99494 units. Conservatively gated on the {base_code} "
-            f"midpoint minimum. Never also report {base_code} this month. "
+            f"time-based.{addon} Gated on {_apcm_gate_text(base_code)} as "
+            f"{APCM_GATE_POLICY}. Never also report {base_code} this month. "
             f"{CODE_MAP[g].status_note}."
         ),
     }
@@ -517,8 +544,10 @@ def evaluate_cocm(
             )
         if apcm_enrolled:
             result["note"] += (
-                f" APCM-enrolled, but {APCM_MIRROR[base_code]} is conservatively gated "
-                f"on the {base_code} minimum and is not recommended this month."
+                f" APCM-enrolled, but {APCM_MIRROR[base_code]} is gated on "
+                f"{_apcm_gate_text(base_code)} ({APCM_GATE_POLICY}) and is not "
+                "recommended this month. Whether G2214 may be reported in an APCM "
+                "month is unresolved — confirm with the MAC."
             )
         return result
 
@@ -581,8 +610,9 @@ def evaluate_bhi(
         result.update(
             eligible_code=None,
             note=f"{minutes} min does not meet the ≥20-min minimum for 99484."
-            + (" APCM-enrolled, but G0570 is conservatively gated on the 99484 "
-               "minimum and is not recommended this month." if apcm_enrolled else ""),
+            + (f" APCM-enrolled, but G0570 is gated on {_apcm_gate_text('99484')} "
+               f"({APCM_GATE_POLICY}) and is not recommended this month."
+               if apcm_enrolled else ""),
         )
     return result
 
@@ -592,7 +622,7 @@ def evaluate_bhi(
 # ---------------------------------------------------------------------------
 
 _CATEGORY_ORDER = [
-    "CoCM", "General BHI", "RHC/FQHC", "APCM add-on",
+    "CoCM", "General BHI", "RHC/FQHC", "APCM add-on", "APCM base",
     "WI Medicaid BHIC", "Initiating",
 ]
 _CATEGORY_LABELS = {
@@ -600,6 +630,7 @@ _CATEGORY_LABELS = {
     "General BHI": "General BHI — Non-CoCM Behavioral Health Integration",
     "RHC/FQHC":    "RHC / FQHC Setting",
     "APCM add-on": f"APCM Companion Add-ons (CY2026 — require {'/'.join(APCM_BASE_CODES)})",
+    "APCM base":   "APCM Base Codes (prerequisite for the add-ons; rates not modeled)",
     "WI Medicaid BHIC": "WI Medicaid BHIC Contract (ForwardHealth portal — verified)",
     "Initiating":  "Valid Initiating Visit Codes (required before first CoCM/BHI month)",
 }

@@ -10,8 +10,14 @@ carry their own in-file changelog (`.github/copilot-instructions.md`).
   (MCP inputs and panel patients) evaluates a patient receiving APCM
   (G0556–G0558) from the same practitioner: the eligible code becomes the
   G0568/G0569/G0570 add-on with `cpt_alternative` carrying the CPT set;
-  below the CPT midpoint minimum the G-code is conservatively not
-  recommended. Pricing still returns the hold and APCM-base warnings.
+  below the CPT midpoint minimum the G-code is not recommended — a
+  **practice policy stricter than CMS-1832-F**, which sets no minute
+  requirement for the add-ons; revisit when written MAC confirmation
+  arrives. Pricing still returns the hold and APCM-base warnings.
+- APCM base codes G0556/G0557/G0558 are catalogued (no rate) so a
+  correctly formed APCM claim no longer raises "unknown code".
+- Open item for the MAC letter: whether G2214 may be reported in an APCM
+  month alongside or instead of G0568/G0569 is not encoded (no source).
 - Tests added for `scripts/credentialing_alert.py` (bands, date coercion,
   workbook loading with real openpyxl tables, Teams delivery with a mocked
   transport, exit codes) and for the MCP tool layer (contracts, warnings,

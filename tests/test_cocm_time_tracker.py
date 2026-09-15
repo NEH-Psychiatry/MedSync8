@@ -96,6 +96,34 @@ def test_apcm_flag_never_changes_no_initiating_visit_result():
     assert evaluate_cocm(120, "initial", False, apcm_enrolled=True)["eligible_code"] is None
 
 
+@pytest.mark.parametrize("minutes,month,expected", [
+    (36, "initial", "G0568"), (35, "initial", "G2214"),
+    (31, "subsequent", "G0569"), (30, "subsequent", "G2214"),
+])
+def test_apcm_unlock_boundaries(minutes, month, expected):
+    assert evaluate_cocm(minutes, month, True, apcm_enrolled=True)["eligible_code"] == expected
+
+
+def test_apcm_bhi_unlock_boundary_and_wording():
+    assert evaluate_bhi(20, True, apcm_enrolled=True)["eligible_code"] == "G0570"
+    note = evaluate_bhi(20, True, apcm_enrolled=True)["note"]
+    assert "99494" not in note and "practice policy" in note  # BHI-shaped, honestly labeled
+
+
+def test_default_path_snapshot_unaffected_by_apcm_feature():
+    r = evaluate_cocm(116, "subsequent", True)
+    assert set(r) == {"mode", "accrued_minutes", "month", "eligible_code", "base_min_met",
+                      "addon_30min_units", "next_99494_at_min", "apcm_alternative", "note"}
+    assert r["mode"] == "CoCM" and "cpt_alternative" not in r
+
+
+def test_well_formed_apcm_claim_only_warns_about_the_hold():
+    w = claim_warnings(["G0568", "G0556"])
+    assert len(w) == 1 and "billing hold" in w[0]
+    assert rate_info("G0556", "medicare-natl").note == "not modeled"
+    assert rate_info("G0557", "wi-medicaid").note == "not covered under wi-medicaid"
+
+
 # ---------------------------------------------------------------------------
 # Rule engine
 # ---------------------------------------------------------------------------
