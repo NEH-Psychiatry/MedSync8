@@ -289,8 +289,11 @@ def chat_stream(req: ChatRequest, claims: dict = Depends(require_access)) -> Str
             )
         )
     except anthropic.APIError as e:
+        # Class name only: the SDK message can carry request details, so it
+        # stays out of the response body and the audit log alike.
+        log.error("anthropic stream request failed: %s", type(e).__name__)
         with stack:  # closes the audit context with status="error"
-            raise HTTPException(502, f"anthropic error: {e}") from e
+            raise HTTPException(502, f"anthropic error: {type(e).__name__}") from e
     except BaseException:
         with stack:
             raise
@@ -313,7 +316,8 @@ def chat_stream(req: ChatRequest, claims: dict = Depends(require_access)) -> Str
                 audit.set_result(reply_len=len(text), citations=citations)
                 yield _sse("done", {"model": ANTHROPIC_MODEL, "reply_len": len(text)})
         except anthropic.APIError as e:
-            yield _sse("error", {"detail": f"anthropic error: {e}"})
+            log.error("anthropic stream failed mid-response: %s", type(e).__name__)
+            yield _sse("error", {"detail": f"anthropic error: {type(e).__name__}"})
         except _StreamFailure as e:
             yield _sse("error", {"detail": e.detail})
 

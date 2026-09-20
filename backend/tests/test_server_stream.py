@@ -155,7 +155,9 @@ def test_stream_upstream_connect_failure_returns_502_and_audits_error(client, st
 
     r = _post_stream(client, use_rag=False)
     assert r.status_code == 502
-    assert r.json()["detail"].startswith("anthropic error")
+    assert r.json()["detail"] == "anthropic error: APIConnectionError"
+    # The SDK's message (which can carry request details) never reaches the client.
+    assert "Connection error" not in r.text
 
     event = client.get("/api/audit/recent").json()["events"][0]
     assert event["status"] == "error"
@@ -187,11 +189,14 @@ def test_stream_mid_stream_failure_emits_error_frame_and_audits_error(client, st
 
     r = _post_stream(client, use_rag=False)
     assert r.status_code == 200
-    events = [e for e, _ in parse_sse(r.text)]
+    frames = parse_sse(r.text)
+    events = [e for e, _ in frames]
     assert events[0] == "citations"
     assert "text" in events
     assert events[-1] == "error"
     assert "done" not in events
+    assert frames[-1][1] == {"detail": "anthropic error: APIConnectionError"}
+    assert "Connection error" not in r.text
 
     event = client.get("/api/audit/recent").json()["events"][0]
     assert event["status"] == "error"
