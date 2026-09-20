@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { TOOLS } from "../prompts";
-import { callBackend } from "../lib/api";
+import { callBackend, streamBackend, StreamUnavailableError } from "../lib/api";
 
 const EMPTY_CONVERSATIONS = { policy: [], supervision: [], lecture: [], chat: [] };
 
@@ -15,6 +15,8 @@ export function useChat({ activeTool, onError }) {
   });
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  // True once the first streamed frame has arrived and a reply bubble exists.
+  const [streaming, setStreaming] = useState(false);
   const bottomRef = useRef(null);
 
   const currentConvo = conversations[activeTool];
@@ -43,13 +45,55 @@ export function useChat({ activeTool, onError }) {
         p[tool].includes(userMsg) ? { ...p, [tool]: [...p[tool], assistantMsg] } : p,
       );
 
+    // Patch the in-progress streamed reply by id; a no-op if it was cleared.
+    const replyId = crypto.randomUUID();
+    const updateReply = (patch) =>
+      setConversations((p) => {
+        const convo = p[tool];
+        if (!convo.some((m) => m.id === replyId)) return p;
+        return { ...p, [tool]: convo.map((m) => (m.id === replyId ? { ...m, ...patch } : m)) };
+      });
+
+    // Drop the streamed placeholder so a fallback reply is not duplicated.
+    const removeReply = () =>
+      setConversations((p) => ({ ...p, [tool]: p[tool].filter((m) => m.id !== replyId) }));
+
     try {
+      let partial = "";
+      try {
+        const { reply, citations } = await streamBackend(tool, updated, {
+          onCitations: (citations) => {
+            setStreaming(true);
+            appendReply({ id: replyId, role: "assistant", content: "", citations });
+          },
+          onText: (_delta, replySoFar) => {
+            partial = replySoFar;
+            updateReply({ content: replySoFar });
+          },
+        });
+        updateReply({ content: reply, citations });
+        return;
+      } catch (e) {
+        if (partial) {
+          // Text already rendered; keep it and report the interruption.
+          onError?.(e.message);
+          updateReply({ content: `${partial}\n\n⚠️ Error: ${e.message}` });
+          return;
+        }
+        // Streaming failed before any reply text (unavailable endpoint, no
+        // ReadableStream, network, HTTP error, or an error frame): fall back.
+        if (!(e instanceof StreamUnavailableError)) onError?.(e.message);
+        removeReply();
+        setStreaming(false);
+      }
+
       const { reply, citations } = await callBackend(tool, updated);
-      appendReply({ role: "assistant", content: reply, citations });
+      appendReply({ id: replyId, role: "assistant", content: reply, citations });
     } catch (e) {
       onError?.(e.message);
       appendReply({ role: "assistant", content: `⚠️ Error: ${e.message}` });
     } finally {
+      setStreaming(false);
       setLoading(false);
     }
   }
@@ -81,6 +125,7 @@ export function useChat({ activeTool, onError }) {
     savedResponses,
     input,
     loading,
+    streaming,
     setInput,
     setConversations,
     sendMessage,

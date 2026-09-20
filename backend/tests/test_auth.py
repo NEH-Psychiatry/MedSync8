@@ -181,3 +181,27 @@ def test_jwks_cache_force_refetch_and_rate_limit(monkeypatch):
     assert rotated["keys"][0]["kid"] == "kid-2"
     assert cache.has_kid("kid-2")
     assert not cache.has_kid("kid-1")
+
+
+def test_chat_stream_rejected_without_token(access_client):
+    client, _ = access_client
+    r = client.post("/api/chat/stream", json={
+        "tool": "chat",
+        "messages": [{"role": "user", "content": "hi"}],
+    })
+    assert r.status_code == 401
+    assert "missing" in r.json()["detail"].lower()
+
+
+def test_chat_stream_accepted_with_valid_token(access_client):
+    client, keypair = access_client
+    good_token = _issue_token(
+        keypair, aud="test-aud-xyz", iss="https://acme.cloudflareaccess.com"
+    )
+    r = client.post(
+        "/api/chat/stream",
+        json={"tool": "chat", "messages": [{"role": "user", "content": "hi"}]},
+        headers={"CF-Access-JWT-Assertion": good_token},
+    )
+    assert r.status_code == 200, r.text
+    assert r.text.startswith("event: citations")
