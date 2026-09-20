@@ -5,6 +5,27 @@ carry their own in-file changelog (`.github/copilot-instructions.md`).
 
 ## Unreleased — branch `claude/update-codebase-vA58U`
 
+### Merged `main` (PR #10, 2026-09-15) — 19 conflicts reconciled
+- Governance: the two independently authored instruction sets are merged
+  into `.github/copilot-instructions.md` v1.2.0, `AGENTS.md`, and the
+  path-scoped files; where they differed the stricter rule was kept.
+  `frontend.instructions.md` (from `main`) now also covers the root
+  workbench.
+- Backend: PR #10's JWKS force-refetch on unknown `kid` (rate-limited) is
+  combined with this branch's lock; PR #10's request-shape validation,
+  message limits, salt helper, and indexing-failure degradation are kept;
+  this branch's fail-shut admin audit gate, minimal `/api/health` (no
+  internals, never advertises auth-disabled or default-salt state), and
+  explicit upstream timeouts win. Every test from both sides survives (the
+  lifespan regression test now asserts on app state rather than a health
+  field the endpoint deliberately does not expose).
+- Frontend: PR #10's `frontend/` files are taken as-is; `prompts.js` gains
+  the `documentation` tool so the prompt/tool sync contract holds.
+- CI: frontend lint is mandatory (no `--if-present`); README, root
+  `.env.example`, and the devcontainer describe all three tracks.
+- Added `docs/mac-inquiry-apcm-addons.md` — the written MAC inquiry for
+  G0568–G0570 with the answer-to-code-change map.
+
 ### Billing model — plugin 1.1.0
 - **APCM-enrolled pathway.** `--apcm-enrolled yes` (CLI), `apcm_enrolled`
   (MCP inputs and panel patients) evaluates a patient receiving APCM

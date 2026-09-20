@@ -11,6 +11,7 @@ FastAPI service that powers `frontend/src/App.jsx`. It:
 
 ```bash
 cd backend
+cp .env.example .env
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 

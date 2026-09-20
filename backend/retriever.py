@@ -87,6 +87,12 @@ def _sha(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
+def _normalize_rows(vectors: np.ndarray) -> np.ndarray:
+    norms = np.linalg.norm(vectors, axis=1, keepdims=True)
+    norms = np.where(norms == 0, 1.0, norms)
+    return vectors / norms
+
+
 # ---------- indexing --------------------------------------------------------
 
 
@@ -115,12 +121,12 @@ class Retriever:
 
         cache = self._load_cache()
         # Only reuse cache if it was built with the same embedder — mixing
-        # vectors from different models gives garbage scores.
-        cache_embedder = cache.get("embedder")
-        if cache_embedder and cache_embedder != self.embedder.name:
+        # vectors from different models gives garbage scores. A cache with no
+        # recorded embedder is treated as a mismatch for the same reason.
+        if cache and cache.get("embedder") != self.embedder.name:
             log.info(
                 "embedder changed (%s -> %s); rebuilding index",
-                cache_embedder, self.embedder.name,
+                cache.get("embedder"), self.embedder.name,
             )
             cache = {}
         cached_by_sha = {(c["sha"]): c for c in cache.get("chunks", [])}
@@ -147,8 +153,12 @@ class Retriever:
                     j += 1
 
         self.chunks = disk_chunks
-        self.vectors = np.array(vectors, dtype=np.float32)
-        self._save_cache()
+        self.vectors = _normalize_rows(np.array(vectors, dtype=np.float32))
+        # Rewrite the cache only when something actually changed — new/changed
+        # chunks were embedded, or docs were removed/reordered.
+        cache_shas = [c.get("sha") for c in cache.get("chunks", [])]
+        if to_embed or cache_shas != [c.sha for c in disk_chunks]:
+            self._save_cache()
         log.info("retriever ready: %d chunks across %d docs",
                  len(self.chunks), len({c.doc_id for c in self.chunks}))
 
@@ -195,15 +205,14 @@ class Retriever:
                 for i, c in enumerate(self.chunks)
             ],
         }
-        self.index_path.write_text(json.dumps(payload), encoding="utf-8")
+        tmp_path = self.index_path.with_suffix(f"{self.index_path.suffix}.tmp")
+        tmp_path.write_text(json.dumps(payload), encoding="utf-8")
+        tmp_path.replace(self.index_path)
 
     def _cosine_topk(self, qv: np.ndarray, k: int) -> list[Hit]:
         assert self.vectors is not None
-        # normalize once; vectors were already normalized by embedding model,
-        # but re-normalize defensively.
-        vn = self.vectors / (np.linalg.norm(self.vectors, axis=1, keepdims=True) + 1e-9)
         qn = qv / (np.linalg.norm(qv) + 1e-9)
-        scores = vn @ qn
+        scores = self.vectors @ qn
         idx = np.argsort(-scores)[:k]
         return [
             Hit(

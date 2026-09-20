@@ -43,15 +43,24 @@ from typing import Any
 log = logging.getLogger(__name__)
 
 DEFAULT_PATH = os.environ.get("AUDIT_LOG_PATH", "./audit.log")
-_RAW_SALT = os.environ.get("AUDIT_SALT", "")
+DEFAULT_AUDIT_SALT = "medsync8-default-salt-change-me"
+# A blank AUDIT_SALT is treated as unset so an empty env var can never yield
+# an empty salt.
+SALT = os.environ.get("AUDIT_SALT", "") or DEFAULT_AUDIT_SALT
+_EFFECTIVE_SALT = SALT  # legacy alias
 RECENT_BUFFER_SIZE = 200  # in-memory ring buffer for /api/audit/recent
 
-if not _RAW_SALT:
+
+def using_default_salt() -> bool:
+    return SALT == DEFAULT_AUDIT_SALT
+
+
+if using_default_salt():
     log.warning(
-        "AUDIT_SALT is not set. Audit hashes use a default salt — set AUDIT_SALT "
-        "in production to prevent cross-deployment correlation."
+        "AUDIT_SALT is not set (or blank). Audit hashes use the default development "
+        "salt — set a unique AUDIT_SALT in production to prevent cross-deployment "
+        "correlation."
     )
-_EFFECTIVE_SALT = _RAW_SALT or "medsync8-default-salt-change-me"
 
 
 def hash_query(text: str, *, salt: str | None = None) -> str:

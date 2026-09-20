@@ -8,6 +8,7 @@ export const TOOLS = [
   { id: "supervision", label: "Supervision", icon: "\u{1FA7A}", desc: "NP/PA oversight tools" },
   { id: "lecture",     label: "Lecture",     icon: "\u{1F393}", desc: "CME content builder" },
   { id: "chat",        label: "Consult",     icon: "\u{1F4AC}", desc: "Clinical consultation" },
+  { id: "documentation", label: "Documents", icon: "\u{1F4C4}", desc: "Clinical documentation" },
 ];
 
 export const TOOL_COLORS = {
@@ -15,6 +16,7 @@ export const TOOL_COLORS = {
   supervision: "#7BC9A0",
   lecture: "#E8AA5A",
   chat: "#C47BE0",
+  documentation: "#5BC9C9",
 };
 
 export const SYSTEM_PROMPTS = {
@@ -22,6 +24,7 @@ export const SYSTEM_PROMPTS = {
   supervision: `You are a supervising psychiatrist creating structured NP/PA supervision tools for psychiatric practice. Generate supervision checklists, feedback forms, competency assessments, and collaborative practice review frameworks. Include measurable competency criteria, prescribing safety checks, documentation quality indicators, and actionable feedback language. Use clear sections with checkboxes and rating scales. When retrieved context is provided, ground your answer in it and cite sources inline as [1], [2], etc.`,
   lecture: `You are a psychiatric educator creating CME-accredited educational content. Build lecture outlines, case presentations, and slide-by-slide content. Always include: LEARNING OBJECTIVES (3-5), KEY TEACHING POINTS, CLINICAL PEARLS (boxed), CASE VIGNETTES with discussion questions, EVIDENCE-BASED REFERENCES. Structure for adult learners with clear headers. When retrieved context is provided, ground your answer in it and cite sources inline as [1], [2], etc.`,
   chat: `You are a board-certified psychiatrist providing expert clinical consultation, regulatory guidance, and practice management support. You have deep expertise in telepsychiatry, controlled substance prescribing (DEA/PDMP), collaborative practice agreements, forensic documentation, ERISA/LTD evaluations, and multi-state licensure. Provide nuanced, clinically grounded responses. When retrieved context is provided, ground your answer in it and cite sources inline as [1], [2], etc.`,
+  documentation: `You are a psychiatric documentation specialist. Generate clinically accurate, legally defensible medical records including SOAP notes, prior authorization letters, psychiatric evaluations, discharge summaries, and informed consent documents. Follow standard psychiatric documentation conventions. Include all required elements: chief complaint, history, MSE, assessment, plan, diagnostic codes, and attestation language. Flag areas requiring clinician customization in [BRACKETS]. When retrieved context is provided, ground your answer in it and cite sources inline as [1], [2], etc.`,
 };
 
 export const QUICK_PROMPTS = {
@@ -42,6 +45,12 @@ export const QUICK_PROMPTS = {
     "Safe Stimulant Prescribing in Telepsychiatry Practice",
     "BPD from Diagnosis to DBT: A Case-Based Teaching Session",
     "Collaborative Practice for Psychiatric NPs: Scope and Safety",
+  ],
+  documentation: [
+    "SOAP note for a new patient ADHD evaluation with stimulant initiation",
+    "Prior authorization letter for Vyvanse \u2014 ADHD with failed generic amphetamine trial",
+    "Psychiatric discharge summary template for inpatient to outpatient transition",
+    "Informed consent document for off-label ketamine treatment",
   ],
   chat: [
     "Ryan Haight Act 2.0 \u2014 what changed for my telepsychiatry practice?",

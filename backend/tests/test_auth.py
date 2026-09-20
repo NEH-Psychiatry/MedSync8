@@ -56,7 +56,7 @@ def access_client(monkeypatch, tiny_corpus: Path, stub_embedder, stub_anthropic,
     monkeypatch.setenv("CF_ACCESS_AUD", "test-aud-xyz")
 
     # Stub out JWKS fetch to return the test public key
-    async def fake_get(_config):
+    async def fake_get(_config, **_kwargs):
         return {
             "keys": [
                 {
@@ -166,3 +166,52 @@ def test_audit_allowed_for_admin(access_client, monkeypatch):
     r = client.get("/api/audit/recent", headers={"CF-Access-JWT-Assertion": token})
     assert r.status_code == 200
     assert "events" in r.json()
+
+
+def test_jwks_cache_force_refetch_and_rate_limit(monkeypatch):
+    """Regression: unknown-kid rotation forces a refetch, but never more often
+    than the rate-limit floor, and never while the TTL is valid without force."""
+    import asyncio
+
+    fetches = []
+
+    class _Resp:
+        def __init__(self, n: int) -> None:
+            self._n = n
+
+        def raise_for_status(self) -> None:
+            pass
+
+        def json(self) -> dict:
+            return {"keys": [{"kid": f"kid-{self._n}"}]}
+
+    class _Client:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def get(self, url: str) -> _Resp:
+            fetches.append(url)
+            return _Resp(len(fetches))
+
+    monkeypatch.setattr(auth_module.httpx, "AsyncClient", _Client)
+    cache = auth_module._JWKSCache()
+    config = auth_module.AccessConfig(team_domain="acme", aud="aud")
+
+    async def scenario():
+        first = await cache.get(config)
+        assert await cache.get(config) == first  # TTL valid — served from cache
+        assert await cache.get(config, force=True) == first  # rate-limited
+        cache._last_fetch = 0  # age past the refetch floor
+        return await cache.get(config, force=True)
+
+    rotated = asyncio.run(scenario())
+    assert len(fetches) == 2
+    assert rotated["keys"][0]["kid"] == "kid-2"
+    assert cache.has_kid("kid-2")
+    assert not cache.has_kid("kid-1")

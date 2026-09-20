@@ -76,7 +76,7 @@ Do not remove either app as a "duplicate": the root workbench cannot render cita
 
 ## Key Conventions
 
-- **Tool IDs** (`policy`, `supervision`, `lecture`, `chat`, `documentation`) are the central organizing concept. They're defined once in `src/constants.js` (TOOLS array, TOOL_COLORS, QUICK_PROMPTS, TEMPLATE_LIBRARY) and mirrored in `server.js` SYSTEM_PROMPTS and `backend/prompts.py` SYSTEM_PROMPTS. Also update the Pydantic `Literal` in `backend/server.py` ChatRequest. Add new tools in **all four places**.
+- **Tool IDs** (`policy`, `supervision`, `lecture`, `chat`, `documentation`) are the central organizing concept. They're defined in `src/constants.js` (TOOLS array, TOOL_COLORS, QUICK_PROMPTS, TEMPLATE_LIBRARY) and mirrored in `server.js` SYSTEM_PROMPTS, `backend/prompts.py` SYSTEM_PROMPTS, the Pydantic `Literal` in `backend/server.py` ChatRequest, and `frontend/src/prompts.js` (TOOLS, TOOL_COLORS, SYSTEM_PROMPTS, QUICK_PROMPTS — the RAG `App.jsx` indexes `QUICK_PROMPTS[tool]`, so every tool needs an entry). Add new tools in **all five places**; `backend/tests/test_prompt_tool_sync.py` fails if the frontend mirror drifts from the backend.
 - **TOOL_MAP** in `constants.js` provides O(1) lookups; use it instead of `TOOLS.find()`.
 - **ERROR_PREFIX** (`⚠️`) in `constants.js` is the shared sentinel for error messages — used in `App.jsx` and `MessageBubble.jsx` to detect error state.
 - **Streaming callbacks** (`sendMessage`) use `setConversations` functional updaters to avoid capturing stale `conversations` in the dependency array — this prevents callback recreation on every streaming chunk.

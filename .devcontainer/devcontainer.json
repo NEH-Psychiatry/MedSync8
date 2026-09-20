@@ -1,38 +1,31 @@
 {
-  "name": "Psychiatry AI Workbench",
-  "image": "mcr.microsoft.com/devcontainers/javascript-node:20",
+  "name": "MedSync8 (Python 3.11 + Node 20)",
+  "image": "mcr.microsoft.com/devcontainers/python:1-3.11-bullseye",
   "features": {
-    "ghcr.io/devcontainers/features/python:1": {
-      "version": "3.11"
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "20"
     }
   },
   "customizations": {
     "codespaces": {
-      "openFiles": [
-        "README.md",
-        "src/App.jsx"
-      ]
+      "openFiles": ["README.md"]
     },
     "vscode": {
-      "settings": {},
       "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
         "dbaeumer.vscode-eslint",
-        "esbenp.prettier-vscode"
+        "esbenp.prettier-vscode",
+        "vitest.explorer"
       ]
     }
   },
-  "updateContentCommand": "npm install",
-  "postAttachCommand": {
-    "server": "npm run dev"
-  },
+  "updateContentCommand": "pip3 install --user -r backend/requirements-test.txt && npm install && cd frontend && npm ci",
   "portsAttributes": {
-    "5173": {
-      "label": "Frontend",
-      "onAutoForward": "openPreview"
-    },
-    "3001": {
-      "label": "API Server"
-    }
+    "8000": { "label": "Backend (FastAPI)" },
+    "5173": { "label": "Vite dev server (workbench or RAG client)" },
+    "3001": { "label": "Workbench API proxy (Express)" },
+    "8501": { "label": "Legacy Streamlit calculator" }
   },
-  "forwardPorts": [5173, 3001]
+  "forwardPorts": [8000, 5173, 3001]
 }

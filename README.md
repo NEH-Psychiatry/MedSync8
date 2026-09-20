@@ -1,84 +1,97 @@
-# Psychiatry AI Workbench
+# MedSync8
 
-A clinical AI workbench for psychiatric practice — built with React + Express, powered by Claude.
+Clinical AI tooling for psychiatric practice, powered by Claude. The repository holds **two application tracks plus a clinical scripts layer**:
 
-## Features
+1. **Psychiatry AI Workbench** — root `src/` (React + Vite) with an Express proxy (`server.js`). Streams responses, saves and exports drafts, runs locally.
+2. **Telepsychiatry assistant (production RAG stack)** — `frontend/` (React + Vite, Cloudflare Pages) with `backend/` (FastAPI, local-corpus retrieval with citations, Cloudflare Access auth, hash-only audit log; deployed to Azure Container Apps or Fly.io).
+3. **Clinical scripts and MCP tools** — `scripts/` (CoCM/BHI billing tracker, credentialing alert), `mcp/` (billing MCP server), `plugins/` (installable Claude Code plugin).
 
-- **Policy Generator** — Create legally defensible clinical policies and procedures with DEA/PDMP regulatory citations
-- **Supervision Tools** — Generate NP/PA supervision checklists, competency assessments, and feedback frameworks
-- **Lecture Builder** — Build CME-accredited educational content with learning objectives, case vignettes, and clinical pearls
-- **Clinical Consult** — Expert consultation for telepsychiatry, controlled substance prescribing, and practice management
-- **Template Library** — 8 pre-built templates for common clinical workflows
-- **Save & Export** — Save responses locally, export to PDF, copy to clipboard
-- **Persistent Storage** — Saved responses survive page refreshes (localStorage)
+A legacy Streamlit medication sync calculator (`med_sync_app_with_stripe.py`, `sync_calculator.py`) predates both apps and is kept for reference.
 
-## Setup
+## Repository structure
 
-### Prerequisites
+- `src/`, `server.js`, `vite.config.js` — workbench UI and Express proxy
+- `frontend/` — RAG chat UI, prompt/template library, Vitest tests
+- `backend/` — API, retrieval, prompts mirror, backend tests
+- `corpus/` — local RAG source documents (public federal regulation text only)
+- `scripts/`, `mcp/`, `plugins/` — billing and credentialing tooling
+- `tests/` — root tests (billing tracker, MCP tools, credentialing alert, plugin sync, legacy calculator)
+- `azure/`, `.github/workflows/` — infrastructure and CI/CD
+- `docs/` — user guide, enterprise development guide, MAC inquiry drafts
 
-- Node.js 20+
-- An [Anthropic API key](https://console.anthropic.com/)
+## Quick start: Psychiatry AI Workbench
 
-### Installation
+Requires Node.js 20+ and an [Anthropic API key](https://console.anthropic.com/).
 
 ```bash
 npm install
+cp .env.example .env      # add ANTHROPIC_API_KEY
+npm run dev               # Vite on :5173, Express proxy on :3001
 ```
-
-### Configuration
-
-```bash
-cp .env.example .env
-```
-
-Add your Anthropic API key to `.env`:
 
 | Variable | Description |
 |---|---|
 | `ANTHROPIC_API_KEY` | **(Required)** Your Anthropic API key |
-| `PORT` | Server port (default: 3001) |
+| `PORT` | Express port (default: 3001) |
 | `ALLOWED_ORIGIN` | CORS origin (default: http://localhost:5173) |
 
-### Running
+Tools: Policy Generator, Supervision Tools, Lecture Builder, Clinical Consult, and Documentation; a template library, save/export to PDF, and localStorage persistence. The API key never leaves the server — the proxy validates tool names, sanitizes messages, and rate-limits (20 req/min).
+
+## Quick start: telepsychiatry assistant (frontend + backend)
+
+### Backend
 
 ```bash
+cd backend
+cp .env.example .env
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn backend.server:app --reload --port 8000
+```
+
+### Frontend
+
+```bash
+cd frontend
+cp .env.example .env      # VITE_API_BASE → the backend URL
+npm ci
 npm run dev
 ```
 
-This starts both the Vite frontend (port 5173) and Express API server (port 3001).
+Frontend defaults to `http://localhost:5173`, backend to `http://localhost:8000`. See `RUNBOOK.md` for deployment and the PHI boundary (no PHI until BAA + local embeddings are confirmed).
 
-### GitHub Codespaces
-
-This project includes a dev container configuration. Open it in GitHub Codespaces and both servers start automatically.
-
-## Architecture
-
-```
-├── server.js              # Express API proxy (keeps API key server-side)
-├── src/
-│   ├── App.jsx            # Main workbench UI
-│   ├── api.js             # Client-side API calls to /api/claude
-│   ├── constants.js       # Tools, prompts, templates
-│   ├── hooks/
-│   │   └── useSavedResponses.js  # localStorage persistence
-│   └── components/
-│       ├── MessageBubble.jsx
-│       └── Spinner.jsx
-├── vite.config.js         # Vite + API proxy config
-└── index.html
-```
-
-**Security**: The Anthropic API key never leaves the server. The Express proxy validates tool names, sanitizes messages, and enforces rate limits (20 req/min).
-
-## Legacy App
-
-The original Streamlit medication sync calculator is still available:
+## Quick start: legacy Streamlit medication sync calculator
 
 ```bash
+cp .env.example .env      # Supabase/Stripe values in the root .env
 pip install -r requirements.txt
 streamlit run med_sync_app_with_stripe.py
 ```
 
+## Open in VS Code
+
+The repository ships a shared workspace configuration under `.vscode/`:
+
+- **Recommended extensions** — Python, Pylance, ESLint, Prettier, and Vitest Explorer.
+- **Debug configurations** — `Backend: FastAPI (uvicorn)`, `Frontend: Vite dev server`, `Backend: pytest`, and a `Full stack: backend + frontend` compound.
+- **Tasks** — install, lint, test, and build tasks per app, plus `All checks (CI parity)`.
+- **Test discovery** — pytest is preconfigured against `backend/tests`; create the venv at `backend/.venv` and VS Code picks it up.
+
+A dev container (`.devcontainer/`) provisions Python 3.11 + Node 20 with all three apps' dependencies preinstalled, for Codespaces or the Dev Containers extension.
+
+## Testing
+
+```bash
+python -m pytest backend/tests tests -q     # backend + root suites (what CI runs)
+npm run build                               # workbench build
+cd frontend && npm run lint && npm test && npm run build
+python -m unittest discover tests -v        # legacy calculator only
+```
+
+## Further documentation
+
+`CLAUDE.md` (architecture and conventions) · `docs/USER_GUIDE.md` · `docs/enterprise-development.md` · `RUNBOOK.md` · `CHANGELOG.md` · `AGENTS.md` and `.github/copilot-instructions.md` (AI-agent governance)
+
 ---
 
-*Nuestra Esperanza Health · AI-assisted drafts require clinical review before use.*
+*Nuestra Esperanza Health · AI-assisted drafts require clinical review before use. Billing outputs are decision-support only.*
