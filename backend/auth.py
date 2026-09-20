@@ -26,6 +26,9 @@ from jose.exceptions import JWTError
 log = logging.getLogger(__name__)
 
 JWKS_TTL_SECONDS = 3600
+# Floor between forced refetches so a flood of bad tokens can't hammer the
+# certs endpoint after a key rotation.
+JWKS_MIN_REFETCH_SECONDS = 60
 
 
 @dataclass
@@ -54,16 +57,25 @@ class _JWKSCache:
     def __init__(self) -> None:
         self._keys: dict[str, Any] | None = None
         self._expires: float = 0
+        self._last_fetch: float = 0
 
-    def get(self, config: AccessConfig) -> dict[str, Any]:
+    async def get(self, config: AccessConfig, *, force: bool = False) -> dict[str, Any]:
         now = time.time()
-        if self._keys and now < self._expires:
+        if self._keys and now < self._expires and not force:
             return self._keys
-        resp = httpx.get(config.certs_url, timeout=5.0)
+        if force and self._keys and now - self._last_fetch < JWKS_MIN_REFETCH_SECONDS:
+            return self._keys
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(config.certs_url)
         resp.raise_for_status()
         self._keys = resp.json()
+        self._last_fetch = now
         self._expires = now + JWKS_TTL_SECONDS
         return self._keys
+
+    def has_kid(self, kid: str) -> bool:
+        keys = (self._keys or {}).get("keys", [])
+        return any(k.get("kid") == kid for k in keys)
 
 
 _cache = _JWKSCache()
@@ -94,10 +106,24 @@ async def require_access(
         raise HTTPException(401, "missing Cloudflare Access JWT")
 
     try:
-        jwks = _cache.get(config)
+        jwks = await _cache.get(config)
     except httpx.HTTPError as e:  # pragma: no cover -- network
         log.error("could not fetch Access JWKS: %s", e)
         raise HTTPException(503, "auth service unavailable") from e
+
+    try:
+        kid = jwt.get_unverified_header(token).get("kid")
+    except JWTError as e:
+        raise HTTPException(401, f"invalid Access JWT: {e}") from e
+
+    if kid and not _cache.has_kid(kid):
+        # Cloudflare rotates Access signing keys; a token signed by a key we
+        # have not cached means the JWKS is stale. Refetch (rate-limited)
+        # instead of rejecting valid tokens until the TTL expires.
+        try:
+            jwks = await _cache.get(config, force=True)
+        except httpx.HTTPError:  # pragma: no cover -- network
+            log.warning("JWKS refetch after unknown kid failed; using cached keys")
 
     try:
         claims = jwt.decode(

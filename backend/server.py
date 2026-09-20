@@ -30,7 +30,7 @@ from .audit import (
 )
 from .auth import require_access
 from .embedders import build_embedder_from_env
-from .prompts import SYSTEM_PROMPTS, VALID_TOOLS
+from .prompts import SYSTEM_PROMPTS
 from .retriever import Retriever, format_context
 
 logging.basicConfig(level=logging.INFO)
@@ -61,7 +61,13 @@ async def lifespan(app: FastAPI):
         app.state.retriever = None
     else:
         retriever = Retriever(CORPUS_DIR, embedder)
-        retriever.load_or_build()
+        try:
+            retriever.load_or_build()
+        except Exception:
+            # A transient embedding/indexing failure must not take the whole
+            # API down — degrade to no-RAG operation, same as no embedder.
+            log.exception("corpus indexing failed — continuing with retrieval disabled")
+            retriever = None
         app.state.retriever = retriever
 
     app.state.anthropic = anthropic.Anthropic()
@@ -162,21 +168,16 @@ def health() -> dict:
 
 @app.post("/api/chat", response_model=ChatResponse)
 def chat(req: ChatRequest, claims: dict = Depends(require_access)) -> ChatResponse:
-    if req.tool not in VALID_TOOLS:
-        raise HTTPException(400, f"unknown tool: {req.tool}")
-
     system_prompt = SYSTEM_PROMPTS[req.tool]
     retriever: Retriever | None = app.state.retriever
     citations: list[Citation] = []
 
     # Grab the last user message once -- used for retrieval and audit hash.
+    # ChatRequest's validator guarantees at least one non-blank user message.
     last_user = next(
         (m.content.strip() for m in reversed(req.messages) if m.role == "user" and m.content.strip()),
         "",
     )
-
-    if not last_user:
-        raise HTTPException(422, "chat requires at least one non-empty user message")
 
     with ChatAuditContext(tool=req.tool, user_query=last_user, claims=claims) as audit:
         if req.use_rag and retriever and retriever.ready() and last_user:

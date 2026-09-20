@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -91,6 +91,72 @@ describe("PsychiatryWorkbench", () => {
 
     expect(screen.getByText("Persisted saved response…")).toBeInTheDocument();
     expect(screen.getByText(/Persisted saved response body/i)).toBeInTheDocument();
+  });
+
+  it("sends a cross-category template under the template's own tool", async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      mockResponse(true, { reply: "Lecture outline", citations: [], model: "test" }),
+    );
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    // Active tool starts as "policy"; the template belongs to "lecture".
+    await user.click(screen.getByRole("button", { name: /Templates/i }));
+    await user.click(screen.getByText("Adult ADHD Lecture (60 min)"));
+
+    await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(1));
+    const body = JSON.parse(globalThis.fetch.mock.calls[0][1].body);
+    expect(body.tool).toBe("lecture");
+    expect(await screen.findByText("Lecture outline")).toBeInTheDocument();
+  });
+
+  it("does not resurrect a conversation cleared while a reply is in flight", async () => {
+    let resolveFetch;
+    globalThis.fetch.mockReturnValueOnce(new Promise((res) => { resolveFetch = res; }));
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.type(screen.getByPlaceholderText(/Policies & procedures/i), "in-flight message");
+    await user.click(screen.getByRole("button", { name: "↑" }));
+    expect(await screen.findByText("in-flight message")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Clear" }));
+    expect(screen.queryByText("in-flight message")).not.toBeInTheDocument();
+
+    resolveFetch(mockResponse(true, { reply: "late reply", citations: [], model: "test" }));
+    // Back on the empty-conversation view; the late reply must not reappear.
+    await waitFor(() => expect(screen.getByText(/Quick prompts/i)).toBeInTheDocument());
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.queryByText("late reply")).not.toBeInTheDocument();
+    expect(screen.queryByText("in-flight message")).not.toBeInTheDocument();
+  });
+
+  it("assigns unique ids to responses saved in quick succession", async () => {
+    globalThis.fetch.mockResolvedValueOnce(
+      mockResponse(true, { reply: "Save me twice", citations: [], model: "test" }),
+    );
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.type(screen.getByPlaceholderText(/Policies & procedures/i), "hello");
+    await user.click(screen.getByRole("button", { name: "↑" }));
+    await screen.findByText("Save me twice");
+
+    await user.hover(screen.getByText("Save me twice"));
+    // fireEvent, not user.click: user-event's pointer simulation does not
+    // reach the hover-revealed absolutely-positioned action button in jsdom.
+    const saveButton = await screen.findByRole("button", { name: "💾 Save" });
+    fireEvent.click(saveButton);
+    fireEvent.click(saveButton);
+
+    await waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem("saved_responses"));
+      expect(saved).toHaveLength(2);
+      expect(saved[0].id).not.toBe(saved[1].id);
+    });
   });
 
   it("uses template click to send template prompt", async () => {

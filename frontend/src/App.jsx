@@ -150,7 +150,7 @@ export default function PsychiatryWorkbench() {
             onTemplateClick={(tmpl) => {
               setActiveTool(tmpl.category);
               setActivePanel("chat");
-              sendMessage(tmpl.prompt);
+              sendMessage(tmpl.prompt, tmpl.category);
             }}
           />
         )}

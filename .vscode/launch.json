@@ -1,0 +1,37 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Backend: FastAPI (uvicorn)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": ["backend.server:app", "--reload", "--port", "8000"],
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/backend/.env",
+      "jinja": false
+    },
+    {
+      "name": "Backend: pytest (backend/tests)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["backend/tests", "-q"],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Frontend: Vite dev server",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "npm run dev",
+      "cwd": "${workspaceFolder}/frontend"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Full stack: backend + frontend",
+      "configurations": ["Backend: FastAPI (uvicorn)", "Frontend: Vite dev server"],
+      "stopAll": true
+    }
+  ]
+}
