@@ -57,6 +57,11 @@ carry their own in-file changelog (`.github/copilot-instructions.md`).
 - Root workbench: vite 8, `claude-opus-4-8` with adaptive thinking.
 
 ### Backend
+- All outbound relays are time-bounded: the Anthropic client
+  (`ANTHROPIC_TIMEOUT_SECONDS`, default 180) and the optional OpenAI
+  embedding client (`OPENAI_TIMEOUT_SECONDS`, default 30) now carry explicit
+  timeouts and retry caps, joining the Cloudflare JWKS fetch (5 s) and the
+  Teams webhook (15 s). A hung upstream can no longer pin a request worker.
 - `/api/audit/recent` is admin-only (`AUDIT_ADMIN_EMAILS`, fails shut).
 - `/api/health` attests `access_enforced: true` when Cloudflare Access is on.
 - Model `claude-opus-4-8` with adaptive thinking.

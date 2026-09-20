@@ -57,15 +57,25 @@ class LocalEmbedder:
         return vecs.tolist()
 
 
+# Every outbound relay in this backend is time-bounded; an embedding call that
+# hangs would otherwise stall a request worker indefinitely.
+OPENAI_TIMEOUT_SECONDS = float(os.environ.get("OPENAI_TIMEOUT_SECONDS", "30"))
+OPENAI_MAX_RETRIES = int(os.environ.get("OPENAI_MAX_RETRIES", "2"))
+
+
+def _openai_client():
+    from openai import OpenAI  # lazy import
+
+    return OpenAI(timeout=OPENAI_TIMEOUT_SECONDS, max_retries=OPENAI_MAX_RETRIES)
+
+
 class OpenAIEmbedder:
     """OpenAI API embedder. Legacy / fallback path."""
 
     def __init__(self, client=None, model: str | None = None) -> None:
         self.model = model or os.environ.get("OPENAI_EMBED_MODEL", DEFAULT_OPENAI_MODEL)
         if client is None:
-            from openai import OpenAI  # lazy import
-
-            client = OpenAI()
+            client = _openai_client()
         self._client = client
         self.name = f"openai:{self.model}"
 

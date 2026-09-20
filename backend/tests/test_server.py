@@ -28,6 +28,22 @@ def client(monkeypatch, tmp_path: Path, tiny_corpus: Path, stub_embedder, stub_a
     return TestClient(server_module.app)
 
 
+def test_anthropic_client_is_time_bounded(monkeypatch):
+    """The FastAPI → Anthropic relay must carry an explicit timeout (relay audit)."""
+    from backend import server as server_module
+
+    captured: dict = {}
+
+    class FakeAnthropic:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setattr(server_module.anthropic, "Anthropic", FakeAnthropic)
+    server_module.build_anthropic_client()
+    assert captured["timeout"] == server_module.ANTHROPIC_TIMEOUT_SECONDS > 0
+    assert captured["max_retries"] == server_module.ANTHROPIC_MAX_RETRIES
+
+
 def test_health_returns_ok(client):
     r = client.get("/api/health")
     assert r.status_code == 200

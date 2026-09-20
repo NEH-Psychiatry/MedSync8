@@ -98,7 +98,7 @@ This repo carries an instruction-file layer that applies to all coding agents: `
 
 ## Environment Variables
 
-Required: `ANTHROPIC_API_KEY`. See `.env.example` for all options. Copy to `.env` for local development. The Express server reads it via `dotenv/config`; the FastAPI backend reads it directly from `os.environ`. Billing rate overrides: `WI_MEDICAID_RATES_JSON`, `WI_MEDICAID_FACTOR`. Credentialing alert: `CREDENTIALING_WORKBOOK`, `TEAMS_WEBHOOK_URL`, `TEAMS_CHANNEL_WEBHOOK`.
+Required: `ANTHROPIC_API_KEY`. See `.env.example` for all options. Copy to `.env` for local development. The Express server reads it via `dotenv/config`; the FastAPI backend reads it directly from `os.environ`. Upstream relay bounds (FastAPI): `ANTHROPIC_TIMEOUT_SECONDS` (default 180), `ANTHROPIC_MAX_RETRIES` (2), `OPENAI_TIMEOUT_SECONDS` (30), `OPENAI_MAX_RETRIES` (2) — every outbound relay in the backend is time-bounded; keep it that way. Billing rate overrides: `WI_MEDICAID_RATES_JSON`, `WI_MEDICAID_FACTOR`. Credentialing alert: `CREDENTIALING_WORKBOOK`, `TEAMS_WEBHOOK_URL`, `TEAMS_CHANNEL_WEBHOOK`.
 
 ## Azure Deployment (Container Apps)
 

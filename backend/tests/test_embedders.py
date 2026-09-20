@@ -43,6 +43,23 @@ def test_openai_embedder_empty_input_noop():
     assert emb.embed([]) == []
 
 
+def test_openai_client_is_time_bounded(monkeypatch):
+    """The OpenAI relay must never be built without a timeout (relay audit)."""
+    import openai
+
+    captured: dict = {}
+
+    class FakeOpenAI:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+            self.embeddings = None
+
+    monkeypatch.setattr(openai, "OpenAI", FakeOpenAI)
+    embedders.OpenAIEmbedder(model="stub")  # client=None → builds the real-shaped client
+    assert captured["timeout"] == embedders.OPENAI_TIMEOUT_SECONDS > 0
+    assert captured["max_retries"] == embedders.OPENAI_MAX_RETRIES
+
+
 def test_embedder_protocol_satisfied_by_openai_embedder():
     class FakeClient:
         class embeddings:

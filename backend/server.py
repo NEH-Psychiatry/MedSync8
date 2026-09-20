@@ -32,6 +32,10 @@ log = logging.getLogger("medsync8")
 
 ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-opus-4-8")
 MAX_TOKENS = int(os.environ.get("ANTHROPIC_MAX_TOKENS", "16000"))
+# /api/chat is a synchronous handler: an unbounded upstream call would pin a
+# worker. 180 s comfortably covers a 16k-token completion with thinking.
+ANTHROPIC_TIMEOUT_SECONDS = float(os.environ.get("ANTHROPIC_TIMEOUT_SECONDS", "180"))
+ANTHROPIC_MAX_RETRIES = int(os.environ.get("ANTHROPIC_MAX_RETRIES", "2"))
 CORPUS_DIR = os.environ.get("CORPUS_DIR", "./corpus")
 TOP_K = int(os.environ.get("RAG_TOP_K", "4"))
 ALLOWED_ORIGINS = os.environ.get(
@@ -61,8 +65,15 @@ async def lifespan(app: FastAPI):
         retriever.load_or_build()
         app.state.retriever = retriever
 
-    app.state.anthropic = anthropic.Anthropic()
+    app.state.anthropic = build_anthropic_client()
     yield
+
+
+def build_anthropic_client() -> anthropic.Anthropic:
+    """Anthropic client with an explicit request bound (see ANTHROPIC_TIMEOUT_SECONDS)."""
+    return anthropic.Anthropic(
+        timeout=ANTHROPIC_TIMEOUT_SECONDS, max_retries=ANTHROPIC_MAX_RETRIES
+    )
 
 
 app = FastAPI(title="MedSync8 Telepsychiatry Backend", lifespan=lifespan)
