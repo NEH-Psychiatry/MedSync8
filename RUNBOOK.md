@@ -11,7 +11,8 @@ Operational manual for the RAG-backed telepsychiatry workbench
 > 2. Embeddings running on the **local** backend (default — no third-party
 >    embedding call), **or** an OpenAI BAA if you swap `EMBED_BACKEND=openai`.
 > 3. Hosting BAA in place (AWS + BAA, Azure + BAA, or Fly.io Enterprise w/ BAA).
-> 4. Cloudflare Access (or equivalent SSO) gating `/api/chat` — see
+> 4. Cloudflare Access (or equivalent SSO) gating `/api/chat` and
+>    `/api/chat/stream` — see
 >    "Cloudflare Access" below. **Implemented in code**; still needs to be
 >    turned on in the Cloudflare dashboard per environment.
 > 5. Audit logging enabled (**implemented** — see "Audit log" below) and
@@ -28,7 +29,8 @@ Operational manual for the RAG-backed telepsychiatry workbench
 
 ```
 Browser (App.jsx)
-  │  POST /api/chat {tool, messages}
+  │  POST /api/chat/stream {tool, messages}   → text/event-stream
+  │  POST /api/chat        {tool, messages}   → JSON (fallback)
   ▼
 FastAPI backend (backend/server.py)
   │
@@ -41,10 +43,17 @@ FastAPI backend (backend/server.py)
   │     └─ enforced when CF_ACCESS_TEAM_DOMAIN + CF_ACCESS_AUD are set
   │
   └──► Anthropic Messages API (claude-opus-4-6)
-           using role-specific system prompt + retrieved context
+           using role-specific system prompt + retrieved context;
+           bounded by ANTHROPIC_TIMEOUT_SECONDS (default 120)
 
 Frontend is a Vite/React SPA deployed to Cloudflare Pages, fronted by the
-same Cloudflare Access application so both the UI and /api/chat require SSO.
+same Cloudflare Access application so the UI and both chat routes require SSO.
+
+Both chat routes share one request schema, one audit path, and one Anthropic
+configuration. `/api/chat/stream` emits one `citations` frame (retrieval runs
+before the model call), then `text` deltas, then `done`; thinking blocks are
+never forwarded. The frontend streams by default and falls back to
+`/api/chat` only when streaming is unavailable.
 ```
 
 ---
@@ -93,8 +102,8 @@ files to the volume — see next section):
 ```
 
 `access_enforced: true` means both `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUD`
-are set and `/api/chat` will reject requests without a valid
-`Cf-Access-Jwt-Assertion` header. In dev, leave them unset to disable
+are set and `/api/chat` and `/api/chat/stream` will reject requests without a
+valid `Cf-Access-Jwt-Assertion` header. In dev, leave them unset to disable
 enforcement.
 
 ## Deploy updates
@@ -182,6 +191,8 @@ fly secrets set CF_ACCESS_AUD=<new-app-aud>         # if you recreate the CF app
 | `/api/health` returns `rag_enabled: false` | Corpus empty or `OPENAI_API_KEY` missing | Add files to the volume; verify secret set |
 | Frontend shows "Backend request failed (0)" | CORS or wrong `VITE_API_BASE` | Set `ALLOWED_ORIGINS` to include the frontend URL; rebuild frontend |
 | 429 / rate limit from Anthropic | Traffic spike | `fly scale count 2` or add retry-with-backoff |
+| Replies appear all at once instead of streaming | A proxy buffers `text/event-stream` | Disable response buffering for `/api/chat/stream` (the backend already sends `X-Accel-Buffering: no`); the UI still completes via the buffered stream |
+| Streaming reply ends with `⚠️ Error` after partial text | Upstream stream dropped or `ANTHROPIC_TIMEOUT_SECONDS` hit between chunks | Check Anthropic status; raise `ANTHROPIC_TIMEOUT_SECONDS` if chunks are legitimately slow |
 | Retriever returns nothing useful | Query wording mismatch | Check chunk content: `fly ssh console -C "cat /data/corpus/index.json \| jq '.chunks[0]'"` |
 | `pypdf` extracts empty text from a PDF | Scanned / image-only PDF | OCR locally (e.g. `ocrmypdf`) before uploading |
 | High memory use | Many large PDFs indexed at once | Upgrade VM: `fly scale memory 1024` |
@@ -196,9 +207,9 @@ fly status                 # machine health
 fly dashboard              # metrics in browser
 ```
 
-Add application-level metrics (optional next step): wrap `/api/chat` with a
-latency histogram + error counter and push to a Prometheus-compatible
-endpoint, or use Fly's built-in metrics.
+Add application-level metrics (optional next step): wrap `/api/chat` and
+`/api/chat/stream` with a latency histogram + error counter and push to a
+Prometheus-compatible endpoint, or use Fly's built-in metrics.
 
 ---
 
@@ -232,7 +243,8 @@ fly secrets set EMBED_BACKEND=openai OPENAI_API_KEY=sk-...
 `backend/auth.py` verifies the Cloudflare Access JWT that Cloudflare adds as
 `Cf-Access-Jwt-Assertion` on every request. It fetches the team's JWKS,
 caches it, and checks `iss`, `aud`, `exp`, and signature. The dependency is
-wired on `/api/chat` only (health stays public for probes).
+wired on `/api/chat`, `/api/chat/stream`, and `/api/audit/recent` (health
+stays public for probes).
 
 **One-time setup:**
 
@@ -255,7 +267,7 @@ wired on `/api/chat` only (health stays public for probes).
    ```
 
 6. Confirm `GET /api/health` shows `access_enforced: true`. Hitting
-   `/api/chat` without logging in should now return 401.
+   `/api/chat` or `/api/chat/stream` without logging in should now return 401.
 
 **Bypass for local dev / CI:** leave both env vars unset. `require_access`
 becomes a no-op. Tests in `backend/tests/test_auth.py` exercise both modes.
@@ -298,8 +310,8 @@ VITE_API_BASE=http://localhost:8000 npm run dev
 
 ## Audit log
 
-Every `/api/chat` request produces one JSON line in `/data/audit.log`
-(configurable via `AUDIT_LOG_PATH`) with:
+Every `/api/chat` and `/api/chat/stream` request produces one JSON line in
+`/data/audit.log` (configurable via `AUDIT_LOG_PATH`) with:
 
 ```json
 {
@@ -320,6 +332,10 @@ Every `/api/chat` request produces one JSON line in `/data/audit.log`
 **What is NOT in the log:** the raw user message, the model's reply, any
 exception message. Only metadata and a salted SHA-256 truncated to 16 hex
 chars. Rotating `AUDIT_SALT` makes old hashes unlinkable to new ones.
+
+Streamed exchanges are recorded identically. `reply_len` is set when the
+stream completes; a stream that fails midway (or a client that disconnects)
+is written with `status: "error"` and `reply_len: 0`.
 
 ### Recent events endpoint
 
@@ -371,7 +387,7 @@ dashboard once, following the steps in the two sections above.
       that have (or will sign) a BAA.
 - [ ] Hosting migrated to BAA-covered tier (AWS + BAA, Azure, Fly Enterprise).
 - [x] **SSO gating wired in code (Cloudflare Access JWT verification on
-      `/api/chat`).** Remaining: create the Cloudflare Access application and
+      `/api/chat` and `/api/chat/stream`).** Remaining: create the Cloudflare Access application and
       set `CF_ACCESS_TEAM_DOMAIN` / `CF_ACCESS_AUD` secrets per environment.
 - [x] **Hash-only audit log (`backend/audit.py`) records timestamp, user
       identity from the Access JWT, tool, salted query hash, lengths, and

@@ -20,6 +20,7 @@ export default function PsychiatryWorkbench() {
     savedResponses,
     input,
     loading,
+    streaming,
     setInput,
     sendMessage,
     saveResponse,
@@ -194,7 +195,7 @@ export default function PsychiatryWorkbench() {
                       onExport={() => exportToPDF(`${tool.label} — ${new Date().toLocaleDateString()}`, msg.content)}
                     />
                   ))}
-                  {loading && <Spinner />}
+                  {loading && !streaming && <Spinner />}
                   <div ref={bottomRef} style={{ height: 40 }} />
                 </>
               )}

@@ -48,6 +48,48 @@ class _AnthropicMessage:
         self.content = [_AnthropicContentBlock(text)]
 
 
+class _StreamDelta:
+    """Mimics ``TextDelta`` / ``ThinkingDelta`` on a ``content_block_delta`` event."""
+
+    def __init__(self, type: str, **fields: str) -> None:
+        self.type = type
+        for name, value in fields.items():
+            setattr(self, name, value)
+
+
+class _StreamEvent:
+    """Mimics a raw ``MessageStreamEvent``; only ``content_block_delta`` carries ``delta``."""
+
+    def __init__(self, type: str, delta: _StreamDelta | None = None) -> None:
+        self.type = type
+        if delta is not None:
+            self.delta = delta
+
+
+class StubMessageStream:
+    """Mimics ``anthropic.lib.streaming.MessageStream``: a context manager that
+    iterates raw stream events. Records whether the server closed it."""
+
+    def __init__(self, events: list[_StreamEvent]) -> None:
+        self._events = events
+        self.closed = False
+
+    def __enter__(self) -> "StubMessageStream":
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        self.closed = True
+
+    def __iter__(self):
+        yield from self._events
+
+
+# Reply text is split into deltas so tests can assert on frame ordering and
+# reassembly. Joined together they equal the non-streaming stub reply.
+STUB_STREAM_PIECES = ("[stub-reply", " to: ", "{last_user}]")
+STUB_THINKING_TEXT = "STUB-THINKING-MUST-NOT-LEAK"
+
+
 class StubAnthropic:
     """Echoes the user's last message back with a marker so tests can assert."""
 
@@ -55,17 +97,49 @@ class StubAnthropic:
         def __init__(self, parent: "StubAnthropic") -> None:
             self._parent = parent
 
-        def create(self, *, model: str, max_tokens: int, system: str,
-                   messages: list[dict[str, Any]]) -> _AnthropicMessage:
-            self._parent.last_call = {"model": model, "system": system, "messages": messages}
-            last_user = next(
+        @staticmethod
+        def _last_user(messages: list[dict[str, Any]]) -> str:
+            return next(
                 (m["content"] for m in reversed(messages) if m["role"] == "user"),
                 "",
             )
-            return _AnthropicMessage(f"[stub-reply to: {last_user}]")
+
+        def create(self, *, model: str, max_tokens: int, system: str,
+                   messages: list[dict[str, Any]]) -> _AnthropicMessage:
+            self._parent.last_call = {"model": model, "system": system, "messages": messages}
+            return _AnthropicMessage(f"[stub-reply to: {self._last_user(messages)}]")
+
+        def stream(self, *, model: str, max_tokens: int, system: str,
+                   messages: list[dict[str, Any]]) -> StubMessageStream:
+            """Yield a thinking block (which the server must drop) followed by
+            the reply split across several ``text_delta`` events."""
+            self._parent.last_call = {"model": model, "system": system, "messages": messages}
+            last_user = self._last_user(messages)
+            events = [
+                _StreamEvent("message_start"),
+                _StreamEvent("content_block_start"),
+                _StreamEvent(
+                    "content_block_delta",
+                    _StreamDelta("thinking_delta", thinking=STUB_THINKING_TEXT),
+                ),
+                _StreamEvent("content_block_stop"),
+                _StreamEvent("content_block_start"),
+                *[
+                    _StreamEvent(
+                        "content_block_delta",
+                        _StreamDelta("text_delta", text=piece.format(last_user=last_user)),
+                    )
+                    for piece in STUB_STREAM_PIECES
+                ],
+                _StreamEvent("content_block_stop"),
+                _StreamEvent("message_stop"),
+            ]
+            self._parent.last_stream = StubMessageStream(events)
+            return self._parent.last_stream
 
     def __init__(self) -> None:
         self.last_call: dict[str, Any] = {}
+        self.last_stream: StubMessageStream | None = None
         self.messages = self._Messages(self)
 
 

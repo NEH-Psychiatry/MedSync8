@@ -4,10 +4,29 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "../App";
 
+// Encode a backend reply as the SSE frames /api/chat/stream emits.
+function sseBody({ reply, citations = [], model }) {
+  const encoder = new TextEncoder();
+  const frames = [
+    `event: citations\ndata: ${JSON.stringify({ citations })}\n\n`,
+    `event: text\ndata: ${JSON.stringify({ delta: reply })}\n\n`,
+    `event: done\ndata: ${JSON.stringify({ model, reply_len: reply.length })}\n\n`,
+  ];
+  return new ReadableStream({
+    start(controller) {
+      frames.forEach((f) => controller.enqueue(encoder.encode(f)));
+      controller.close();
+    },
+  });
+}
+
+// Successful responses stream (the hook tries /api/chat/stream first);
+// failures carry the JSON error shape both routes share.
 function mockResponse(ok, payload, status = 200) {
   return {
     ok,
     status,
+    body: ok ? sseBody(payload) : null,
     json: vi.fn().mockResolvedValue(payload),
   };
 }
