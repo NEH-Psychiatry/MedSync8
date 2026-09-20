@@ -137,17 +137,60 @@ describe("useChat streaming", () => {
     expect(result.current.loading).toBe(false);
   });
 
-  it("surfaces a non-fallback HTTP error from the streaming route once", async () => {
-    globalThis.fetch.mockResolvedValueOnce(
-      jsonResponse(false, { detail: "missing Cloudflare Access JWT" }, 401),
-    );
+  it("falls back to POST /api/chat on an HTTP error from the streaming route", async () => {
+    globalThis.fetch
+      .mockResolvedValueOnce(jsonResponse(false, { detail: "anthropic error: upstream" }, 502))
+      .mockResolvedValueOnce(jsonResponse(true, { reply: "sync reply", citations: [], model: "test" }));
 
     const { result } = renderHook(() => useChat({ activeTool: "chat" }));
     await act(async () => {
       await result.current.sendMessage("hello");
     });
 
-    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+    expect(globalThis.fetch.mock.calls[1][0]).toMatch(/\/api\/chat$/);
+    expect(result.current.currentConvo).toHaveLength(2);
+    expect(result.current.currentConvo[1].content).toBe("sync reply");
+  });
+
+  it("falls back without a duplicate bubble when an error frame arrives before any text", async () => {
+    const sse = sseStream();
+    globalThis.fetch
+      .mockResolvedValueOnce(streamResponse(sse))
+      .mockResolvedValueOnce(
+        jsonResponse(true, { reply: "sync reply", citations: [CITATION], model: "test" }),
+      );
+
+    const { result } = renderHook(() => useChat({ activeTool: "chat" }));
+    await act(async () => {
+      const pending = result.current.sendMessage("hello");
+      sse.push("citations", { citations: [CITATION] });
+      sse.push("error", { detail: "anthropic response missing text content" });
+      sse.close();
+      await pending;
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+    expect(result.current.currentConvo).toHaveLength(2);
+    expect(result.current.currentConvo[1]).toMatchObject({
+      role: "assistant",
+      content: "sync reply",
+      citations: [CITATION],
+    });
+  });
+
+  it("shows one error when both routes fail", async () => {
+    globalThis.fetch
+      .mockResolvedValueOnce(jsonResponse(false, { detail: "missing Cloudflare Access JWT" }, 401))
+      .mockResolvedValueOnce(jsonResponse(false, { detail: "missing Cloudflare Access JWT" }, 401));
+
+    const { result } = renderHook(() => useChat({ activeTool: "chat" }));
+    await act(async () => {
+      await result.current.sendMessage("hello");
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+    expect(result.current.currentConvo).toHaveLength(2);
     expect(result.current.currentConvo[1].content).toBe("⚠️ Error: missing Cloudflare Access JWT");
   });
 });

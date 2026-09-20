@@ -17,7 +17,8 @@ All notable changes to MedSync8 are recorded here. The format follows
 - Frontend streaming: `streamBackend` in `frontend/src/lib/api.js` consumes
   the SSE route with `fetch` and `ReadableStream`, and `useChat` renders
   citations as soon as their frame arrives, then appends text deltas. The
-  hook falls back to `POST /api/chat` when streaming is unavailable.
+  hook falls back to `POST /api/chat` whenever streaming fails before any
+  reply text has rendered.
 - Tests: the Anthropic test stub gained a `stream()` method; new backend
   tests cover frame ordering, thinking-block suppression, audit recording,
   error handling, and Cloudflare Access gating on the stream route; a new

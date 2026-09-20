@@ -95,7 +95,7 @@ Rules:
 - The exchange is audited exactly like `/api/chat` (hash-only). The reply length is recorded when the stream completes.
 - `ANTHROPIC_TIMEOUT_SECONDS` (default 120) bounds the upstream call; for streams it caps the wait for each chunk.
 
-The frontend tries this route first and falls back to `/api/chat` when streaming is unavailable (older backend, no `ReadableStream`, or the request never reached the server).
+The frontend tries this route first and falls back to `/api/chat` whenever streaming fails before any reply text has rendered (older backend, no `ReadableStream`, network failure, HTTP error, or an `error` frame before the first delta). Once text has rendered, a failure keeps the partial text and appends the error instead.
 
 ## Why this design
 

@@ -53,7 +53,7 @@ Both chat routes share one request schema, one audit path, and one Anthropic
 configuration. `/api/chat/stream` emits one `citations` frame (retrieval runs
 before the model call), then `text` deltas, then `done`; thinking blocks are
 never forwarded. The frontend streams by default and falls back to
-`/api/chat` only when streaming is unavailable.
+`/api/chat` whenever streaming fails before any reply text has rendered.
 ```
 
 ---

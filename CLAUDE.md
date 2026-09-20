@@ -26,7 +26,7 @@ audit path (`ChatAuditContext`):
 Both routes use `ANTHROPIC_MODEL`, `ANTHROPIC_MAX_TOKENS`, and
 `ANTHROPIC_TIMEOUT_SECONDS`. The frontend (`frontend/src/lib/api.js`,
 `frontend/src/hooks/useChat.js`) streams by default and falls back to
-`/api/chat` only when streaming is unavailable.
+`/api/chat` whenever streaming fails before any reply text has rendered.
 
 ## Validation Commands
 

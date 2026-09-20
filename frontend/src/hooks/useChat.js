@@ -54,13 +54,15 @@ export function useChat({ activeTool, onError }) {
         return { ...p, [tool]: convo.map((m) => (m.id === replyId ? { ...m, ...patch } : m)) };
       });
 
+    // Drop the streamed placeholder so a fallback reply is not duplicated.
+    const removeReply = () =>
+      setConversations((p) => ({ ...p, [tool]: p[tool].filter((m) => m.id !== replyId) }));
+
     try {
-      let started = false;
       let partial = "";
       try {
         const { reply, citations } = await streamBackend(tool, updated, {
           onCitations: (citations) => {
-            started = true;
             setStreaming(true);
             appendReply({ id: replyId, role: "assistant", content: "", citations });
           },
@@ -72,14 +74,17 @@ export function useChat({ activeTool, onError }) {
         updateReply({ content: reply, citations });
         return;
       } catch (e) {
-        if (started) {
-          // The reply bubble already exists; keep whatever text arrived.
+        if (partial) {
+          // Text already rendered; keep it and report the interruption.
           onError?.(e.message);
-          updateReply({ content: partial ? `${partial}\n\n⚠️ Error: ${e.message}` : `⚠️ Error: ${e.message}` });
+          updateReply({ content: `${partial}\n\n⚠️ Error: ${e.message}` });
           return;
         }
-        if (!(e instanceof StreamUnavailableError)) throw e;
-        // Streaming is unavailable (old backend, no ReadableStream, network) — fall back.
+        // Streaming failed before any reply text (unavailable endpoint, no
+        // ReadableStream, network, HTTP error, or an error frame): fall back.
+        if (!(e instanceof StreamUnavailableError)) onError?.(e.message);
+        removeReply();
+        setStreaming(false);
       }
 
       const { reply, citations } = await callBackend(tool, updated);

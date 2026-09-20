@@ -63,7 +63,8 @@ describe("PsychiatryWorkbench", () => {
   });
 
   it("renders backend errors in chat", async () => {
-    globalThis.fetch.mockResolvedValueOnce(mockResponse(false, { detail: "backend exploded" }, 500));
+    // The stream route fails, the hook falls back to /api/chat, and that fails too.
+    globalThis.fetch.mockResolvedValue(mockResponse(false, { detail: "backend exploded" }, 500));
 
     const user = userEvent.setup();
     render(<App />);

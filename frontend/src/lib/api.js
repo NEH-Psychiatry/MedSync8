@@ -2,8 +2,9 @@ const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
 
 /**
  * Thrown when streaming cannot be used at all (no ReadableStream support,
- * endpoint missing on the backend, or the request never reached it).
- * Callers fall back to the non-streaming `callBackend` on this error only.
+ * endpoint missing on the backend, or the request never reached it). The
+ * hook falls back to `callBackend` on this and on any other failure that
+ * happens before the first text delta; this class marks the silent cases.
  */
 export class StreamUnavailableError extends Error {
   constructor(message) {
