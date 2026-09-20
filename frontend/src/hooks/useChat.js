@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { TOOLS } from "../prompts";
 import { callBackend } from "../lib/api";
 
-const EMPTY_CONVERSATIONS = { policy: [], supervision: [], lecture: [], chat: [] };
+// Derived from TOOLS so every tool id (including ones added later) has a
+// conversation slot — App.jsx indexes conversations[t.id] for each tool.
+const EMPTY_CONVERSATIONS = Object.fromEntries(TOOLS.map((t) => [t.id, []]));
 
 export function useChat({ activeTool, onError }) {
   const [conversations, setConversations] = useState(EMPTY_CONVERSATIONS);
