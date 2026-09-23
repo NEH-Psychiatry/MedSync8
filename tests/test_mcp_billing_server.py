@@ -22,12 +22,13 @@ import cocm_billing_server as srv  # noqa: E402
 j = json.loads
 
 
-def test_six_tools_registered_with_read_only_annotations():
+def test_seven_tools_registered_with_read_only_annotations():
     tools = asyncio.run(srv.mcp.list_tools())
     names = sorted(t.name for t in tools)
     assert names == sorted([
         "billing_evaluate_cocm", "billing_evaluate_bhi", "billing_list_codes",
         "billing_get_rate", "billing_price_claim", "billing_evaluate_panel",
+        "billing_plan_capacity",
     ])
     for t in tools:
         assert t.annotations is not None
@@ -37,22 +38,23 @@ def test_six_tools_registered_with_read_only_annotations():
 
 def test_every_response_carries_disclaimer_with_full_source_chain():
     r = j(srv.billing_get_rate(srv.GetRateInput(code="99492")))
-    for src in ("MLN909432", "CMS-1832-F", "MM14315", "NACHC"):
+    for src in ("MLN909432", "CMS-1832-F", "MM14315", "NACHC", "RVU26C", "ForwardHealth", "2026-09-20"):
         assert src in r["disclaimer"]
+    assert r["payer_model"]["source"].startswith("CMS CY2026 RVU/GPCI")
 
 
 def test_evaluate_cocm_contract_and_apcm_path():
     r = j(srv.billing_evaluate_cocm(srv.CocmInput(minutes=116, month="subsequent", initiating_visit=True)))
     assert r["eligible_code"] == "99493 + 99494 + 99494"
-    assert r["estimated_payment_usd"] == round(144.96 + 2 * 61.46, 2)
-    assert r["rate_confidence"] == "verified_secondary" and r["rate_source"]
+    assert r["estimated_payment_usd"] == round(138.71 + 2 * 58.72, 2)
+    assert r["rate_confidence"] == "verified_primary" and "RVU26C" in r["rate_source"]
     assert r["threshold_confidence"].startswith("verified_primary")
     assert "warnings" not in r
 
     a = j(srv.billing_evaluate_cocm(srv.CocmInput(
         minutes=116, month="subsequent", initiating_visit=True, apcm_enrolled=True)))
     assert a["eligible_code"] == "G0569" and a["cpt_alternative"] == "99493 + 99494 + 99494"
-    assert a["estimated_payment_usd"] == 145.96
+    assert a["estimated_payment_usd"] == 139.45
     assert any("billing hold" in w for w in a["warnings"])
     assert any("G0556/G0557/G0558" in w for w in a["warnings"])
 
@@ -60,12 +62,14 @@ def test_evaluate_cocm_contract_and_apcm_path():
 def test_evaluate_bhi_apcm_path_and_medicaid_not_covered():
     r = j(srv.billing_evaluate_bhi(srv.BhiInput(minutes=24, initiating_visit=True, apcm_enrolled=True, payer="wi-medicaid")))
     assert r["eligible_code"] == "G0570" and r["unpriced_codes"] == ["G0570"]
-    assert "estimated_payment_usd" not in r
+    assert "estimated_payment_usd" not in r and "not covered" in r["unpriced_reason"]["G0570"]
+    g = j(srv.billing_evaluate_cocm(srv.CocmInput(minutes=30, month="subsequent", initiating_visit=True, payer="wi-medicaid")))
+    assert g["eligible_code"] == "G2214" and "unbilled" in g["unpriced_reason"]["G2214"]
 
 
 def test_price_claim_warns_on_mirror_pair_but_still_totals():
     r = j(srv.billing_price_claim(srv.PriceClaimInput(codes=["99492", "G0568"])))
-    assert r["total_usd"] == round(160.32 + 161.66, 2)
+    assert r["total_usd"] == round(153.19 + 154.25, 2)
     assert any("duplicate-service" in w for w in r["warnings"])
     assert {ln["code"]: ln["status"] for ln in r["lines"]} == {"99492": "active", "G0568": "hold"}
 
@@ -107,7 +111,29 @@ def test_panel_buckets_and_per_patient_warnings():
     assert per["PT-004"]["eligible_code"] == "G0568" and per["PT-004"]["warnings"]
     assert "error" in per["PT-005"]
     assert r["code_tally"] == {"99492": 1, "G0568": 1}
-    assert r["total_estimated_revenue_usd"] == round(160.32 + 161.66, 2)
+    assert r["total_estimated_revenue_usd"] == round(153.19 + 154.25, 2)
+
+
+def test_list_codes_exposes_per_payer_rates_with_provenance():
+    codes = {c["code"]: c for c in j(srv.billing_list_codes(srv.ListCodesInput(category="CoCM")))["codes"]}
+    assert codes["99492"]["rates"]["wi-medicaid"]["rate_usd"] == 146.05
+    assert codes["99492"]["rates"]["wi-medicaid"]["rate_confidence"] == "verified_primary"
+    assert "20260905" in codes["99492"]["rates"]["wi-medicaid"]["rate_source"]
+    assert codes["G2214"]["payers"] == ["medicare-wi", "medicare-fqhc"]
+    assert "wi-medicaid" not in codes["G2214"]["rates"]
+
+
+def test_capacity_plan_tool_contract_and_errors():
+    r = j(srv.billing_plan_capacity(srv.CapacityPlanInput(active_patients=125)))
+    assert r["billable_months"] == 100.0 and r["bhcm_fte_budgeted"] == 2.1
+    assert {p["payer"] for p in r["per_payer"]} == {"wi-medicaid", "medicare-wi", "private"}
+    assert r["rate_confidence"] == "estimated" and "Illustrative" in r["assumptions"]["source"]
+    m = j(srv.billing_plan_capacity(srv.CapacityPlanInput(active_patients=60, payer_mix={"medicare-fqhc": 1.0})))
+    assert m["rate_confidence"] == "verified_primary" and m["all_payers_priced"] is True
+    e = j(srv.billing_plan_capacity(srv.CapacityPlanInput(active_patients=60, payer_mix={"wi-medicaid": 0.4})))
+    assert "error" in e and "private" in e["valid_mix_keys"]
+    with pytest.raises(ValidationError):
+        srv.CapacityPlanInput(active_patients=10, payer_mix={"medicare-natl": 1.0})
 
 
 def test_evaluation_xml_answers_through_the_tools():
@@ -116,8 +142,8 @@ def test_evaluation_xml_answers_through_the_tools():
     got = [
         str(j(srv.billing_evaluate_cocm(srv.CocmInput(minutes=137, month="subsequent", initiating_visit=True)))["addon_30min_units"]),
         str(j(srv.billing_evaluate_cocm(srv.CocmInput(minutes=36, month="initial", initiating_visit=True, payer="medicare-wi")))["estimated_payment_usd"]),
-        str(j(srv.billing_price_claim(srv.PriceClaimInput(codes=["99492", "99494", "99494", "99494"])))["total_usd"]),
-        str(j(srv.billing_evaluate_cocm(srv.CocmInput(minutes=30, month="subsequent", initiating_visit=True, payer="wi-medicaid")))["estimated_payment_usd"]),
+        str(j(srv.billing_price_claim(srv.PriceClaimInput(codes=["99492", "99494", "99494", "99494"], payer="medicare-fqhc")))["total_usd"]),
+        str(j(srv.billing_get_rate(srv.GetRateInput(code="99493", payer="wi-medicaid")))["rate_usd"]),
         str(j(srv.billing_get_rate(srv.GetRateInput(code="S0280", payer="wi-medicaid")))["rate_usd"]),
         str(j(srv.billing_list_codes(srv.ListCodesInput(category="Initiating")))["count"]),
         str(j(srv.billing_evaluate_cocm(srv.CocmInput(minutes=85, month="initial", initiating_visit=True)))["next_99494_at_min"]),
@@ -129,5 +155,8 @@ def test_evaluation_xml_answers_through_the_tools():
                   - j(srv.billing_get_rate(srv.GetRateInput(code="99493")))["rate_usd"], 2)),
         next(c["code"] for c in j(srv.billing_list_codes(srv.ListCodesInput(category="APCM add-on")))["codes"]
              if c["mirror_of"] == "99493"),
+        str(j(srv.billing_plan_capacity(srv.CapacityPlanInput(active_patients=125)))["bhcm_fte_budgeted"]),
+        str(next(p for p in j(srv.billing_plan_capacity(srv.CapacityPlanInput(
+            active_patients=100, payer_mix={"wi-medicaid": 1.0})))["per_payer"])["allowance_per_billable_month_usd"]),
     ]
     assert got == answers

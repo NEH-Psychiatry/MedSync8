@@ -5,6 +5,51 @@ carry their own in-file changelog (`.github/copilot-instructions.md`).
 
 ## Unreleased — branch `claude/update-codebase-vA58U`
 
+### Billing model rebuilt on real numbers — plugin 2.0.0 (breaking)
+- **Rates are explicit data, not factors.** Every (code, payer) amount is a
+  `Rate(usd, confidence, source, note)` transcribed from the practice's
+  rate-verification workbook (`NEH-CoCM-Spravato-FQHC-Consolidated-
+  2026-09-20.xlsx`, Rates sheet) and the WI CoCM rate-card memo (V1.0,
+  2026-09-07). The GPCI factor (0.952) and the Medicaid factor (0.70) are
+  gone; a slot without a verified amount is **unpriced** (with an
+  `unpriced_reason`) rather than estimated.
+- **Payers renamed.** `medicare-wi` = Medicare PFS, Wisconsin locality,
+  computed from CMS RVU26C (99492 $153.19 · 99493 $138.71 · 99494 $58.72;
+  G2214 $58.01 · 99484 $55.04 · G0568 $154.25 · G0569 $139.45 · G0570
+  $55.36 from the RVU26A memo, `verified_secondary` until re-verified).
+  `medicare-fqhc` = CMS designated RHC/FQHC care-coordination rates
+  (99492 $160.32 · 99493 $144.96 · 99494 $61.46). `wi-medicaid` =
+  ForwardHealth fee-for-service max fees, official 2026-09-05 snapshot
+  (99492 $146.05 · 99493 $141.61 · 99494 $60.51) — roughly 95% of Medicare
+  WI, not the 70% the old factor assumed. **`medicare-natl` is retired**:
+  the July memo's "national" figures were the FQHC designated rates.
+  Requests naming it fail with a message pointing to the replacement.
+- **G2214 is Medicare-only** (absent from every ForwardHealth schedule,
+  verified 2026-07-30 and 2026-09-05): a WI Medicaid month under the base
+  minimum is non-billable and reported as unbilled care-manager time.
+  99484 has no WI Medicaid amount in the verification set (prior finding
+  ~75% of Medicare) and stays unpriced until loaded.
+- New confidence label `verified_primary` (read or computed from the
+  payer's published primary file; file and date in `source`), ranked
+  between `portal_verified` and `verified_secondary`.
+- `RATE_OVERRIDES_JSON` (per payer, each entry with its own confidence and
+  source; bare numbers accepted) replaces `WI_MEDICAID_FACTOR`; the legacy
+  `WI_MEDICAID_RATES_JSON` shorthand still works.
+- `PAYER_MODELS` carries each payer's description, source and caveat (a
+  psychiatrist cannot be the WI CoCM billing practitioner; CHCs use the
+  T1015 PPS pathway) — surfaced by `--list-codes` and `billing_get_rate`.
+- **Capacity planning.** `plan_capacity()` / `blended_month_allowance()`,
+  CLI `--capacity-plan N --payer-mix …`, and the seventh MCP tool
+  `billing_plan_capacity` convert an active panel into billable months,
+  expected 99492/99493/99494 units, BHCM FTE (exact and budget-rounded)
+  and allowance per payer. Defaults are the workbook's planning inputs
+  (80% billable conversion, 15% initial-month share, 0.2 extra units, 60
+  patients/FTE, 94% realization, private at 125% of Medicare WI —
+  estimated) and reproduce its CoCM rows exactly ($159.56 / $152.63 /
+  $154.38 per billable month; 125 active → 100 billable months, 2.1 FTE).
+- CLI default payer is now `medicare-wi`; `mcp/evaluation.xml` re-derived
+  (12 questions). `billing_list_codes` returns `rates` keyed by payer.
+
 ### Merged `main` (PR #10, 2026-09-15) — 19 conflicts reconciled
 - Governance: the two independently authored instruction sets are merged
   into `.github/copilot-instructions.md` v1.2.0, `AGENTS.md`, and the

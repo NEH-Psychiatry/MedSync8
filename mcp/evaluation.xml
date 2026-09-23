@@ -5,15 +5,15 @@
   </qa_pair>
   <qa_pair>
     <question>Under the medicare-wi payer model, what is the estimated payment in USD for an initial CoCM month where the patient accrued exactly 36 minutes with an initiating visit on file?</question>
-    <answer>152.62</answer>
+    <answer>153.19</answer>
   </qa_pair>
   <qa_pair>
-    <question>What is the total modeled payment in USD at medicare-natl rates for a claim consisting of one 99492 and three units of 99494?</question>
+    <question>What is the total modeled payment in USD at medicare-fqhc rates for a claim consisting of one 99492 and three units of 99494?</question>
     <answer>344.7</answer>
   </qa_pair>
   <qa_pair>
-    <question>A subsequent-month CoCM patient accrued exactly 30 minutes with an initiating visit on file. What is the estimated wi-medicaid rate in USD for the code this month qualifies for (no ForwardHealth override loaded)?</question>
-    <answer>42.55</answer>
+    <question>What is the wi-medicaid (ForwardHealth fee-for-service) maximum allowable fee in USD for 99493, the subsequent-month CoCM code?</question>
+    <answer>141.61</answer>
   </qa_pair>
   <qa_pair>
     <question>What is the portal-verified Wisconsin Medicaid rate in USD for the BHIC medical home comprehensive care coordination and planning initial plan code?</question>
@@ -28,15 +28,23 @@
     <answer>86</answer>
   </qa_pair>
   <qa_pair>
-    <question>Evaluate this panel at medicare-natl rates, all with initiating visits on file: PT-A cocm initial 70 minutes, PT-B cocm subsequent 29 minutes, PT-C bhi 20 minutes. How many patients are billable this month?</question>
+    <question>Evaluate this panel at medicare-wi rates, all with initiating visits on file: PT-A cocm initial 70 minutes, PT-B cocm subsequent 29 minutes, PT-C bhi 20 minutes. How many patients are billable this month?</question>
     <answer>2</answer>
   </qa_pair>
   <qa_pair>
-    <question>In USD, how much higher is the medicare-natl rate for 99492 than for 99493?</question>
-    <answer>15.36</answer>
+    <question>In USD, how much higher is the medicare-wi rate for 99492 than for 99493?</question>
+    <answer>14.48</answer>
   </qa_pair>
   <qa_pair>
     <question>According to the code catalogue, which APCM companion add-on code mirrors 99493 for subsequent CoCM months?</question>
     <answer>G0569</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Using the default planning assumptions, how many behavioral health care manager FTE are budgeted for an active CoCM panel of 125 patients?</question>
+    <answer>2.1</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Using the default planning assumptions, what is the expected allowance in USD per billable CoCM month under the wi-medicaid payer model?</question>
+    <answer>154.38</answer>
   </qa_pair>
 </evaluation>

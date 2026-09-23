@@ -5,8 +5,9 @@ description: >
   Collaborative Care Model or Behavioral Health Integration billing —
   codes 99492, 99493, 99494, G2214, 99484, G0568-G0570 (APCM add-ons), the
   discontinued G0512, minute thresholds, the midpoint rule, initiating
-  visits, add-on units, payer rates (Medicare national, Medicare Wisconsin,
-  WI Medicaid/ForwardHealth), claim pricing, or panel revenue. Routes
+  visits, add-on units, payer rates (Medicare Wisconsin locality, Medicare
+  FQHC, WI Medicaid/ForwardHealth), claim pricing, panel revenue, or
+  capacity planning (billable months, care-manager FTE). Routes
   questions to the medsync8-billing MCP tools instead of answering from
   memory.
 ---
@@ -29,6 +30,7 @@ returned as `warnings`.
 | "What does code X pay under payer Y?" | `billing_get_rate` |
 | "Price this claim" (code list, repeats = units) | `billing_price_claim` |
 | Multiple patients / monthly revenue | `billing_evaluate_panel` (synthetic IDs only — never PHI) |
+| "How many billable months / BHCM FTE / what allowance for a panel of N?" | `billing_plan_capacity` (active_patients, payer_mix, optional assumptions) |
 
 ## What the tools enforce (relay their output; do not restate from memory)
 
@@ -48,14 +50,25 @@ returned as `warnings`.
   the hold.
 - **G0512** is discontinued (2026-01-01). RHC/FQHC settings bill the same
   time-based codes; there is no RHC/FQHC alternative code to surface.
-- **Payers**: medicare-natl, medicare-wi (GPCI estimate), wi-medicaid
-  (ForwardHealth portal values where loaded, else a labeled estimate;
-  Medicare-only codes return "not covered").
+- **Payers**: medicare-wi (Medicare PFS, Wisconsin locality, computed from
+  the CMS CY2026 RVU release), medicare-fqhc (CMS designated RHC/FQHC
+  care-coordination rates), wi-medicaid (ForwardHealth fee-for-service max
+  fees, 2026-09-05 snapshot). Every rate carries `rate_confidence`
+  (portal_verified / verified_primary / verified_secondary / estimated) and
+  the file it came from. A slot with no verified amount is returned as
+  unpriced with an `unpriced_reason` — never an estimate. G2214 and the APCM
+  add-ons are Medicare-only ("not covered" under wi-medicaid). A
+  psychiatrist cannot be the WI Medicaid CoCM billing practitioner; CHCs
+  bill through the T1015 PPS pathway (relay the `payer_model.caveat`).
+- **Capacity planning** is a scenario built on the practice's planning
+  assumptions (labeled illustrative in the output); `private` is always an
+  estimate. It never overrides per-patient eligibility.
 
 ## Response requirements
 
 - Always relay `rate_confidence` **and** `rate_source`; treat `estimated`
-  as unverified and say so.
+  as unverified and say so, and relay `unpriced_reason` when a code has no
+  rate under the payer.
 - Relay every entry in `warnings` verbatim before any dollar figure — a
   warned claim may be totaled for visibility but must not be presented as
   submittable.

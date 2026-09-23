@@ -20,11 +20,14 @@ from cocm_time_tracker import (  # noqa: E402
     APCM_MIRROR,
     CODE_MAP,
     PAYERS,
-    WI_GPCI_FACTOR,
-    WI_MEDICAID_FACTOR,
+    RATE_CONFIDENCE_LEVELS,
+    PlanningAssumptions,
+    _parse_overrides,
+    blended_month_allowance,
     claim_warnings,
     evaluate_bhi,
     evaluate_cocm,
+    plan_capacity,
     price_claim,
     price_codes,
     rate_info,
@@ -79,8 +82,8 @@ def test_apcm_enrolled_path_selects_g_code_with_cpt_alternative():
     assert r["eligible_code"] == "G0569" and r["cpt_alternative"] == "99493 + 99494 + 99494"
     assert r["mode"].endswith("(APCM pathway)") and "not time-based" in r["note"].lower()
     assert "apcm_alternative" not in r and "next_99494_at_min" not in r
-    p = price_claim([r["eligible_code"]], "medicare-natl")
-    assert p.total_usd == 145.96 and any("billing hold" in w for w in p.warnings)
+    p = price_claim([r["eligible_code"]], "medicare-wi")
+    assert p.total_usd == 139.45 and any("billing hold" in w for w in p.warnings)
     b = evaluate_bhi(24, True, apcm_enrolled=True)
     assert b["eligible_code"] == "G0570" and b["cpt_alternative"] == "99484"
 
@@ -120,7 +123,7 @@ def test_default_path_snapshot_unaffected_by_apcm_feature():
 def test_well_formed_apcm_claim_only_warns_about_the_hold():
     w = claim_warnings(["G0568", "G0556"])
     assert len(w) == 1 and "billing hold" in w[0]
-    assert rate_info("G0556", "medicare-natl").note == "not modeled"
+    assert "Rate not modeled" in rate_info("G0556", "medicare-wi").note
     assert rate_info("G0557", "wi-medicaid").note == "not covered under wi-medicaid"
 
 
@@ -149,62 +152,156 @@ def test_addon_requires_base_code():
 
 
 def test_clean_claim_has_no_warnings_and_totals():
-    p = price_claim(["99493", "99494", "99494"], "medicare-natl")
-    assert p.warnings == [] and p.total_usd == round(144.96 + 2 * 61.46, 2)
-    assert price_codes(["99493", "99494", "99494"], "medicare-natl")[0] == p.total_usd
+    p = price_claim(["99493", "99494", "99494"], "medicare-wi")
+    assert p.warnings == [] and p.total_usd == round(138.71 + 2 * 58.72, 2)
+    assert price_codes(["99493", "99494", "99494"], "medicare-wi")[0] == p.total_usd
+    assert price_claim(["99493", "99494", "99494"], "medicare-fqhc").total_usd == round(144.96 + 2 * 61.46, 2)
+    assert price_claim(["99493", "99494", "99494"], "wi-medicaid").total_usd == round(141.61 + 2 * 60.51, 2)
 
 
 def test_claim_confidence_is_weakest_line():
-    # 99492 (verified_secondary) + a wi-medicaid estimate line → estimated overall
-    assert price_claim(["99492"], "medicare-natl").confidence == "verified_secondary"
-    assert price_claim(["99492", "99494"], "medicare-wi").confidence == "estimated"
-    assert price_claim(["G0512"], "medicare-natl").confidence == ""
+    # 99493 (verified_primary, RVU26C) + G0569 (verified_secondary, RVU26A memo) → secondary overall
+    assert price_claim(["99492"], "medicare-wi").confidence == "verified_primary"
+    assert price_claim(["99493", "G0569"], "medicare-wi").confidence == "verified_secondary"
+    assert price_claim(["G0512"], "medicare-wi").confidence == ""
 
 
 def test_discontinued_is_distinguishable_from_unknown():
-    d = rate_info("G0512", "medicare-natl")
-    u = rate_info("ZZZZ", "medicare-natl")
+    d = rate_info("G0512", "medicare-wi")
+    u = rate_info("ZZZZ", "medicare-wi")
     assert d.status == "discontinued" and "2026-01-01" in d.note and d.rate_usd is None
     assert u.status == "unknown"
     assert any("discontinued" in x for x in claim_warnings(["G0512"]))
 
 
 # ---------------------------------------------------------------------------
-# Payer coverage and provenance
+# Payer coverage and provenance (real numbers — NEH workbook 2026-09-20)
 # ---------------------------------------------------------------------------
 
-def test_medicare_only_codes_never_get_medicaid_estimates():
+WORKBOOK_RATES = {  # Rates sheet, NEH-CoCM-Spravato-FQHC-Consolidated-2026-09-20.xlsx
+    "medicare-wi":   {"99492": 153.19, "99493": 138.71, "99494": 58.72},
+    "medicare-fqhc": {"99492": 160.32, "99493": 144.96, "99494": 61.46},
+    "wi-medicaid":   {"99492": 146.05, "99493": 141.61, "99494": 60.51},
+}
+
+
+@pytest.mark.parametrize("payer", sorted(WORKBOOK_RATES))
+def test_cpt_cocm_rates_match_the_verification_workbook(payer):
+    for code, usd in WORKBOOK_RATES[payer].items():
+        info = rate_info(code, payer)
+        assert info.rate_usd == usd, (code, payer)
+        assert info.confidence == "verified_primary"
+        assert "2026" in info.source and ("computed in" in info.source or "read in" in info.source)
+
+
+def test_wi_locality_memo_codes_are_secondary_until_reverified():
+    for code, usd in {"G2214": 58.01, "99484": 55.04, "G0568": 154.25,
+                      "G0569": 139.45, "G0570": 55.36}.items():
+        info = rate_info(code, "medicare-wi")
+        assert info.rate_usd == usd and info.confidence == "verified_secondary", code
+        assert "RVU26A" in info.source and "re-verify" in info.source
+
+
+def test_g2214_is_medicare_only_because_forwardhealth_omits_it():
+    info = rate_info("G2214", "wi-medicaid")
+    assert info.rate_usd is None and "not covered" in info.note and "unbilled" in info.note
+    assert "wi-medicaid" not in CODE_MAP["G2214"].payers
+    # A 30-min subsequent month earns nothing from WI Medicaid — and says so.
+    p = price_claim([evaluate_cocm(30, "subsequent", True)["eligible_code"]], "wi-medicaid")
+    assert p.total_usd is None and p.unpriced_codes == ["G2214"]
+
+
+def test_unverified_slots_are_unpriced_not_estimated():
+    for code, payer in (("99484", "wi-medicaid"), ("G2214", "medicare-fqhc"),
+                        ("99484", "medicare-fqhc"), ("G0568", "medicare-fqhc")):
+        info = rate_info(code, payer)
+        assert info.rate_usd is None and info.confidence == "" and "RATE_OVERRIDES_JSON" in info.note, (code, payer)
+
+
+def test_medicare_only_codes_never_get_medicaid_rates():
     for g in ("G0568", "G0569", "G0570"):
         info = rate_info(g, "wi-medicaid")
         assert info.rate_usd is None and "not covered" in info.note
-        assert rate_info(g, "medicare-natl").status == "hold"
+        assert rate_info(g, "medicare-wi").status == "hold"
 
 
 def test_bhic_codes_are_medicaid_only_and_portal_verified():
     assert rate_info("S0280", "wi-medicaid").confidence == "portal_verified"
     assert rate_info("S0280", "wi-medicaid").rate_usd == 473.64
-    assert rate_info("S0280", "medicare-natl").rate_usd is None
+    assert rate_info("S0280", "medicare-wi").rate_usd is None
 
 
-def test_every_rate_has_a_source_and_no_label_upgrade_without_one():
+def test_every_rate_has_a_source_and_nothing_in_the_catalogue_is_estimated():
+    seen = 0
     for c in CODE_MAP.values():
-        if c.medicare_natl is not None:
-            assert c.rate_confidence in ("verified_secondary", "estimated"), c.code
-            assert c.rate_source, f"{c.code} has a rate but no rate_source"
-    # 99484 is crosswalk-derived, not independently published → must stay estimated.
-    assert CODE_MAP["99484"].rate_confidence == "estimated"
+        for payer, r in c.rates.items():
+            seen += 1
+            assert payer in c.payers, f"{c.code}: rate for a payer the code excludes"
+            assert r.confidence in RATE_CONFIDENCE_LEVELS and r.confidence != "estimated", c.code
+            assert r.source, f"{c.code}/{payer} has a rate but no source"
+    assert seen == 17  # 3 CPT × 3 payers + G2214 + 99484 + 3 APCM add-ons + 3 BHIC
 
 
-def test_estimates_are_labeled_estimated_for_every_payer():
-    assert rate_info("99492", "medicare-wi").confidence == "estimated"
-    assert rate_info("99492", "wi-medicaid").confidence == "estimated"
-    assert rate_info("99492", "medicare-wi").rate_usd == round(160.32 * WI_GPCI_FACTOR, 2)
+def test_overrides_add_or_replace_with_provenance(monkeypatch, capsys):
+    env = {
+        "RATE_OVERRIDES_JSON": '{"wi-medicaid": {"99484": {"usd": 41.28, "confidence": '
+                               '"verified_primary", "source": "ForwardHealth query 2026-09-21"}, '
+                               '"99492": 150.00}, "aetna": {"99492": 1}, '
+                               '"medicare-wi": {"99492": {"usd": 1, "confidence": "made_up"}}}',
+        "WI_MEDICAID_RATES_JSON": '{"S0281": 14.00}',
+    }
+    ov = _parse_overrides(env)
+    assert ov["wi-medicaid"]["99484"].usd == 41.28
+    assert ov["wi-medicaid"]["99484"].confidence == "verified_primary"
+    assert ov["wi-medicaid"]["99492"].confidence == "portal_verified"  # bare-number shorthand
+    assert ov["wi-medicaid"]["S0281"].usd == 14.00                       # legacy variable
+    assert "99492" not in ov["medicare-wi"]                              # bad confidence rejected
+    err = capsys.readouterr().err
+    assert "unknown payer 'aetna'" in err and "made_up" not in err and "confidence must be" in err
+    assert _parse_overrides({"RATE_OVERRIDES_JSON": "not json"}) == {p: {} for p in PAYERS}
 
 
-def test_unknown_payer_rejected():
-    with pytest.raises(ValueError):
+def test_retired_and_unknown_payers_are_rejected_with_guidance():
+    with pytest.raises(ValueError, match="medicare-fqhc"):
+        rate_info("99492", "medicare-natl")
+    with pytest.raises(ValueError, match="unknown payer"):
         rate_info("99492", "aetna")
-    assert set(PAYERS) == {"medicare-natl", "medicare-wi", "wi-medicaid"}
+    assert set(PAYERS) == {"medicare-wi", "medicare-fqhc", "wi-medicaid"}
+
+
+# ---------------------------------------------------------------------------
+# Capacity planning (workbook CoCM sheet reproduced from the rate tables)
+# ---------------------------------------------------------------------------
+
+def test_blended_allowance_reproduces_workbook_cocm_rows():
+    # C01 Medicare FQHC $159.56 · C07 office Medicare $152.63 · C07 Medicaid $154.38
+    assert blended_month_allowance("medicare-fqhc") == 159.56
+    assert blended_month_allowance("medicare-wi") == 152.63
+    assert blended_month_allowance("wi-medicaid") == 154.38
+
+
+def test_plan_capacity_matches_workbook_base_case():
+    plan = plan_capacity(125)  # default mix 70/10/20 Medicaid/Medicare/private
+    assert plan["billable_months"] == 100.0 and plan["bhcm_fte_budgeted"] == 2.1
+    assert plan["bhcm_fte_required"] == round(125 / 60, 4)
+    assert plan["expected_units"] == {"99492": 15.0, "99493": 85.0, "99494": 20.0}
+    rows = {r["payer"]: r for r in plan["per_payer"]}
+    assert rows["wi-medicaid"]["billable_months"] == 70.0
+    assert rows["private"]["rate_confidence"] == "estimated" and plan["rate_confidence"] == "estimated"
+    assert plan["expected_collections_usd"] == round(plan["gross_allowance_usd"] * 0.94, 2)
+    all_medicaid = plan_capacity(100, {"wi-medicaid": 1.0}, PlanningAssumptions(billable_conversion=1.0))
+    assert abs(all_medicaid["gross_allowance_usd"] - 15437.80) < 0.5  # workbook C07
+    assert all_medicaid["rate_confidence"] == "verified_primary"
+
+
+def test_plan_capacity_validates_inputs():
+    with pytest.raises(ValueError, match="sum to 1.0"):
+        plan_capacity(10, {"wi-medicaid": 0.5})
+    with pytest.raises(ValueError, match="unknown payer_mix"):
+        plan_capacity(10, {"medicare-natl": 1.0})
+    with pytest.raises(ValueError):
+        PlanningAssumptions(billable_conversion=1.5)
+    assert plan_capacity(0)["gross_allowance_usd"] == 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -217,17 +314,19 @@ def _eval_answers() -> list[str]:
 
 
 def test_evaluation_fixture_matches_code():
-    natl = lambda c: rate_info(c, "medicare-natl").rate_usd  # noqa: E731
+    wi = lambda c: rate_info(c, "medicare-wi").rate_usd  # noqa: E731
     expected = [
         str(evaluate_cocm(137, "subsequent", True)["addon_30min_units"]),
         str(rate_info("99492", "medicare-wi").rate_usd),
-        str(price_claim(["99492", "99494", "99494", "99494"], "medicare-natl").total_usd),
-        str(round(natl("G2214") * WI_MEDICAID_FACTOR, 2)),
+        str(price_claim(["99492", "99494", "99494", "99494"], "medicare-fqhc").total_usd),
+        str(rate_info("99493", "wi-medicaid").rate_usd),
         str(rate_info("S0280", "wi-medicaid").rate_usd),
         str(sum(1 for c in CODE_MAP.values() if c.category == "Initiating")),
         str(evaluate_cocm(85, "initial", True)["next_99494_at_min"]),
         "2",  # PT-A 70 initial + PT-B 29 subsequent + PT-C 20 bhi → two billable
-        str(round(natl("99492") - natl("99493"), 2)),
+        str(round(wi("99492") - wi("99493"), 2)),
         APCM_MIRROR["99493"],
+        str(plan_capacity(125)["bhcm_fte_budgeted"]),
+        str(blended_month_allowance("wi-medicaid")),
     ]
     assert _eval_answers() == expected

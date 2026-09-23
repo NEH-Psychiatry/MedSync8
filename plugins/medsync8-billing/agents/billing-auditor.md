@@ -83,10 +83,21 @@ billing practitioner and address the behavioral health condition.
    mirror CPT code (either/or — never both in one month), without an APCM
    base code (G0556–G0558), or while its `status` is `hold`; and any
    `discontinued` code (G0512, 2026-01-01). `rate_info()` must return no
-   rate for Medicare-only codes under wi-medicaid ("not covered").
-   Every code with a Medicare rate must carry a `rate_source`; a label may
-   only be `verified_secondary` when that source is a published amount —
-   crosswalk-derived figures stay `estimated`.
+   rate for Medicare-only codes under wi-medicaid ("not covered") — that
+   includes G2214, which is absent from every ForwardHealth schedule.
+   Rates are explicit data: every `Rate` in `BillingCode.rates` must carry
+   a `source` naming the payer file and date (CMS RVU26C / CMS RHC-FQHC
+   CY2026 rates / ForwardHealth 2026-09-05 snapshot, as recorded in the
+   NEH verification workbook of 2026-09-20). Labels: `verified_primary`
+   only when read or computed from the payer's published primary file;
+   `verified_secondary` for a dated secondary document (the RVU26A memo
+   figures for G2214/99484/G0568–G0570 until re-verified); anything
+   crosswalk- or factor-derived stays `estimated`. No factor (GPCI,
+   Medicaid percentage) may reappear in code; a slot without a verified
+   amount must be unpriced, not estimated. Check `plan_capacity()` treats
+   its assumptions as illustrative and `private` as `estimated`, and that
+   `blended_month_allowance()` still reproduces the workbook CoCM rows
+   (159.56 FQHC / 152.63 WI office / 154.38 WI Medicaid).
 5. **Report.** For each finding: the governing rule (with source), expected
    result, actual result, and verdict (PASS / FAIL / NEEDS-VERIFICATION).
 

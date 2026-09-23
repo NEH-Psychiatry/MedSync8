@@ -30,7 +30,7 @@ Secrets flow one way: **GitHub encrypted secrets → deploy-time seed → Key Va
 | Prohibited everywhere | PHI, patient identifiers, dates of service, 42 CFR Part 2 records, payer/member IDs | Nowhere — including fixtures, `corpus/`, comments, commit messages, card payloads |
 | Hash-only | User queries | `backend/audit.py` salted SHA-256; never raw text, never weakened salting |
 | Synthetic only | Test patients, panels, NPIs | `PT-001`-style IDs, checksummed test NPIs, declared fake date ranges |
-| Labeled estimates | Payer rates | Confidence labels (`verified_secondary`, `estimated`, `portal_verified`) — never upgrade a label without a verifying source |
+| Labeled estimates | Payer rates | Confidence labels (`portal_verified`, `verified_primary`, `verified_secondary`, `estimated`) with a file-and-date `source` on every rate — never upgrade a label without a verifying source; an unverified slot stays unpriced rather than estimated |
 
 ## 5. Access Control Pattern
 

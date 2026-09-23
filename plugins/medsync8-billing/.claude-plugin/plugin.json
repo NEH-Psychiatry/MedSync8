@@ -1,7 +1,7 @@
 {
   "name": "medsync8-billing",
-  "version": "1.1.0",
-  "description": "CoCM/BHI billing decision support for psychiatric practices: CMS midpoint-rule eligibility (99492/99493/99494/G2214/99484), full code catalogue including CY2026 APCM add-ons, three-payer rate model, claim pricing, whole-panel evaluation, and an adversarial billing auditor. Decision-support only — verify against the current CMS Physician Fee Schedule.",
+  "version": "2.0.0",
+  "description": "CoCM/BHI billing decision support for psychiatric practices: CMS midpoint-rule eligibility (99492/99493/99494/G2214/99484), full code catalogue including CY2026 APCM add-ons, three-payer rate model with per-rate provenance (Medicare WI locality, Medicare FQHC, WI Medicaid/ForwardHealth), claim pricing, whole-panel evaluation, panel capacity planning, and an adversarial billing auditor. Decision-support only — verify against the current CMS Physician Fee Schedule.",
   "author": {
     "name": "NEH-Psychiatry"
   },

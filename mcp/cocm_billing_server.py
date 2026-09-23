@@ -3,7 +3,7 @@
 
 Exposes the MedSync8 billing tracker (scripts/cocm_time_tracker.py) as MCP
 tools: midpoint-rule eligibility, the full code catalogue, per-payer rate
-lookups, claim pricing, and whole-panel evaluation.
+lookups, claim pricing, whole-panel evaluation, and panel capacity planning.
 
 All tools are read-only and deterministic. Every response carries the
 standing disclaimer: decision-support only — verify against the current CMS
@@ -34,11 +34,15 @@ from cocm_time_tracker import (  # noqa: E402
     ALL_CODES,
     CODE_MAP,
     DISCLAIMER as TRACKER_DISCLAIMER,
+    PAYER_MODELS,
     PAYERS,
+    PRIVATE_MIX_KEY,
     SOURCE_LINE,
     THRESHOLD_CONFIDENCE,
+    PlanningAssumptions,
     evaluate_bhi,
     evaluate_cocm,
+    plan_capacity,
     price_claim,
     rate_info,
 )
@@ -46,7 +50,8 @@ from cocm_time_tracker import (  # noqa: E402
 # Single provenance string, derived from the tracker's SOURCES.
 DISCLAIMER = f"{TRACKER_DISCLAIMER} {SOURCE_LINE}."
 
-Payer = Literal["medicare-natl", "medicare-wi", "wi-medicaid"]
+Payer = Literal["medicare-wi", "medicare-fqhc", "wi-medicaid"]
+MixKey = Literal["medicare-wi", "medicare-fqhc", "wi-medicaid", "private"]
 
 mcp = FastMCP("medsync8_billing_mcp")
 
@@ -66,6 +71,9 @@ def _attach_pricing(result: dict[str, Any], payer: str) -> dict[str, Any]:
             result["rate_source"] = pricing.sources
         if pricing.unpriced_codes:
             result["unpriced_codes"] = pricing.unpriced_codes
+            result["unpriced_reason"] = {
+                ln.code: ln.note for ln in pricing.lines if ln.rate_usd is None
+            }
         if pricing.warnings:
             result["warnings"] = pricing.warnings
     result["threshold_confidence"] = THRESHOLD_CONFIDENCE
@@ -108,7 +116,7 @@ class CocmInput(BaseModel):
         description="True if the patient receives Advanced Primary Care Management (G0556-G0558) from the same practitioner this month — selects the G0568/G0569 add-on pathway instead of 99492/99493 (either/or, never both)",
     )
     payer: Payer = Field(
-        default="medicare-natl",
+        default="medicare-wi",
         description="Rate model for the payment estimate",
     )
 
@@ -121,7 +129,7 @@ class BhiInput(BaseModel):
     minutes: int = Field(..., ge=0, le=1440, description="Accrued BHI clinical-staff minutes this calendar month")
     initiating_visit: bool = Field(..., description="True if a qualifying initiating visit is on file")
     apcm_enrolled: bool = Field(default=False, description="True if the patient receives APCM (G0556-G0558) from the same practitioner — selects the G0570 add-on pathway instead of 99484")
-    payer: Payer = Field(default="medicare-natl", description="Rate model for the payment estimate")
+    payer: Payer = Field(default="medicare-wi", description="Rate model for the payment estimate")
 
 
 class ListCodesInput(BaseModel):
@@ -140,7 +148,7 @@ class GetRateInput(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
 
     code: str = Field(..., min_length=4, max_length=12, description="CPT/HCPCS code, e.g. '99492', 'G2214', 'H0038'")
-    payer: Payer = Field(default="medicare-natl", description="Rate model")
+    payer: Payer = Field(default="medicare-wi", description="Rate model")
 
 
 class PriceClaimInput(BaseModel):
@@ -152,7 +160,7 @@ class PriceClaimInput(BaseModel):
         ..., min_length=1, max_length=50,
         description="Codes as billed, repeats allowed for multi-unit add-ons, e.g. ['99493', '99494', '99494']",
     )
-    payer: Payer = Field(default="medicare-natl", description="Rate model")
+    payer: Payer = Field(default="medicare-wi", description="Rate model")
 
 
 class PanelPatient(BaseModel):
@@ -176,7 +184,26 @@ class PanelInput(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
 
     patients: list[PanelPatient] = Field(..., min_length=1, max_length=500, description="Patient-months to evaluate")
-    payer: Payer = Field(default="medicare-natl", description="Rate model for revenue totals")
+    payer: Payer = Field(default="medicare-wi", description="Rate model for revenue totals")
+
+
+class CapacityPlanInput(BaseModel):
+    """Input for planning an active CoCM panel's billable months, staffing and allowance."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    active_patients: float = Field(..., ge=0, le=100000, description="Active CoCM panel size (patients enrolled this month)")
+    payer_mix: dict[MixKey, float] | None = Field(
+        default=None,
+        description="Shares summing to 1.0 by payer; 'private' is priced as medicare-wi × private_factor_of_medicare_wi (estimated). Default: wi-medicaid 0.70, medicare-wi 0.10, private 0.20",
+    )
+    billable_conversion: float = Field(default=0.80, ge=0, le=1, description="Billable months per active patient (default 0.80)")
+    initial_month_share: float = Field(default=0.15, ge=0, le=1, description="Share of billable months that are initial (99492) months")
+    extra_units_per_month: float = Field(default=0.2, ge=0, description="Average qualifying 99494 units per billable month")
+    caseload_per_fte: int = Field(default=60, ge=1, description="Active patients per BHCM FTE (AIMS complex/FQHC guidance: 60)")
+    fte_increment: float = Field(default=0.1, gt=0, description="BHCM FTE budget rounding increment")
+    collection_realization: float = Field(default=0.94, ge=0, le=1, description="Aggregate receipts as a fraction of allowance")
+    private_factor_of_medicare_wi: float = Field(default=1.25, ge=0, description="Commercial sensitivity multiplier on medicare-wi (UNVERIFIED)")
 
 
 # ---------------------------------------------------------------------------
@@ -261,12 +288,13 @@ def billing_list_codes(params: ListCodesInput) -> str:
     their mirror CPT code), 'WI Medicaid BHIC' (H0038/S0280/S0281 —
     portal-verified ForwardHealth rates), 'Initiating' (valid initiating-visit
     codes). Each entry carries its status, rule fields (mirror_of,
-    requires_any_of, exclusive_with, payers) and rate provenance.
+    requires_any_of, exclusive_with, payers) and per-payer rates, each with
+    its own confidence label and source locator.
 
     Returns:
         str: JSON list of codes with description, category, minute thresholds,
-             status/status_note, rule fields, rates, rate_confidence,
-             rate_source, and notes.
+             status/status_note, rule fields, rates (payer -> rate_usd,
+             rate_confidence, rate_source, note), and notes.
     """
     codes = [c for c in ALL_CODES if params.category is None or c.category == params.category]
     return _json({
@@ -280,10 +308,13 @@ def billing_list_codes(params: ListCodesInput) -> str:
                 "status_note": c.status_note or None,
                 "target_min": c.target_min,
                 "min_to_bill": c.min_to_bill,
-                "medicare_natl_usd": c.medicare_natl,
-                "wi_medicaid_usd": c.wi_medicaid,
-                "rate_confidence": c.rate_confidence or None,
-                "rate_source": c.rate_source or None,
+                "rates": {
+                    payer: {
+                        "rate_usd": r.usd, "rate_confidence": r.confidence,
+                        "rate_source": r.source, "note": r.note or None,
+                    }
+                    for payer, r in c.rates.items()
+                } or None,
                 "mirror_of": c.mirror_of,
                 "requires_any_of": list(c.requires_any_of) or None,
                 "exclusive_with": list(c.exclusive_with) or None,
@@ -308,15 +339,19 @@ def billing_list_codes(params: ListCodesInput) -> str:
 def billing_get_rate(params: GetRateInput) -> str:
     """Look up the modeled rate for one CPT/HCPCS code under a payer model.
 
-    Payers: 'medicare-natl' (CY2026 national non-facility), 'medicare-wi'
-    (NGS J6 statewide locality, GPCI-adjusted estimate), 'wi-medicaid'
-    (ForwardHealth portal values where loaded, otherwise a labeled estimate).
+    Payers: 'medicare-wi' (Medicare PFS, Wisconsin locality, computed from
+    the CMS CY2026 RVU release), 'medicare-fqhc' (CMS CY2026 designated
+    RHC/FQHC care-coordination rates), 'wi-medicaid' (ForwardHealth
+    fee-for-service maximum allowable fees, 2026-09-05 snapshot). Every rate
+    carries a confidence label (portal_verified, verified_primary,
+    verified_secondary, estimated) and the file it was read from.
 
     Returns:
-        str: JSON with code, payer, rate_usd (null when discontinued, not
-             covered under the payer, or not modeled — see note), rate_confidence,
-             status (active|hold|discontinued), rate_source, and note. If the
-             code is unknown, lists valid codes.
+        str: JSON with code, payer, payer_model (description, source, caveat),
+             rate_usd (null when discontinued, not covered under the payer, or
+             not in the verification set — see note), rate_confidence, status
+             (active|hold|discontinued), rate_source, and note. If the code is
+             unknown, lists valid codes.
     """
     code = params.code.upper() if params.code[0].isalpha() else params.code
     if code not in CODE_MAP:
@@ -326,7 +361,12 @@ def billing_get_rate(params: GetRateInput) -> str:
             "suggestion": "Use billing_list_codes to browse the catalogue.",
         })
     info = rate_info(code, params.payer)
-    return _json({"payer": params.payer, **_line(info)})
+    m = PAYER_MODELS[params.payer]
+    return _json({
+        "payer": params.payer,
+        "payer_model": {"description": m.description, "source": m.source, "caveat": m.caveat},
+        **_line(info),
+    })
 
 
 @mcp.tool(
@@ -436,6 +476,52 @@ def billing_evaluate_panel(params: PanelInput) -> str:
         "total_estimated_revenue_usd": round(revenue, 2),
         "per_patient": per_patient,
     })
+
+
+@mcp.tool(
+    name="billing_plan_capacity",
+    annotations={
+        "title": "Plan CoCM Panel Capacity",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    },
+)
+def billing_plan_capacity(params: CapacityPlanInput) -> str:
+    """Convert an active CoCM panel into expected billable months, BHCM staffing and monthly allowance.
+
+    Billing side only: applies the practice's planning assumptions (defaults
+    from the NEH CoCM consolidated workbook, 2026-09-20 — all labeled
+    illustrative/editable) to the payer rate tables. Returns expected
+    99492/99493/99494 units, BHCM FTE (exact and budget-rounded), allowance
+    per billable month for each payer in the mix, gross allowance, and
+    expected collections. Labor, overhead and PPS economics are out of scope.
+    The result is a planning scenario, not a forecast, and never overrides
+    per-patient midpoint-rule eligibility.
+
+    Returns:
+        str: JSON with billable_months, expected_units, bhcm_fte_required,
+             bhcm_fte_budgeted, per_payer (share, billable_months,
+             allowance_per_billable_month_usd, gross_allowance_usd,
+             rate_confidence, rate_source), gross_allowance_usd,
+             expected_collections_usd, rate_confidence (weakest),
+             assumptions (with source), note, disclaimer.
+    """
+    a = PlanningAssumptions(
+        billable_conversion=params.billable_conversion,
+        initial_month_share=params.initial_month_share,
+        extra_units_per_month=params.extra_units_per_month,
+        caseload_per_fte=params.caseload_per_fte,
+        fte_increment=params.fte_increment,
+        collection_realization=params.collection_realization,
+        private_factor_of_medicare_wi=params.private_factor_of_medicare_wi,
+    )
+    try:
+        plan = plan_capacity(params.active_patients, params.payer_mix, a)
+    except ValueError as exc:
+        return _json({"error": str(exc), "valid_mix_keys": [*PAYERS, PRIVATE_MIX_KEY]})
+    return _json(plan)
 
 
 if __name__ == "__main__":
