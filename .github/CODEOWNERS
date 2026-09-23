@@ -1,0 +1,10 @@
+* @cvassat
+
+/SECURITY.md @cvassat
+/.github/ @cvassat
+/backend/auth.py @cvassat
+/backend/audit.py @cvassat
+/backend/server.py @cvassat
+/corpus/ @cvassat
+/Dockerfile @cvassat
+/fly.toml @cvassat
