@@ -1,2 +1,2 @@
 # MCP SDK: 1.x (FastMCP) and 2.x (MCPServer) both supported via the import shim.
-mcp>=1.2,<3
+mcp>=1.28.1,<3
