@@ -19,11 +19,11 @@
       ]
     }
   },
-  "updateContentCommand": "pip3 install --user -r backend/requirements-test.txt && cd frontend && npm ci",
+  "updateContentCommand": "python3 -m venv backend/.venv && backend/.venv/bin/pip install --upgrade pip && backend/.venv/bin/pip install -r backend/requirements.txt -r backend/requirements-test.txt -r requirements.txt && cd frontend && npm ci",
   "portsAttributes": {
     "8000": { "label": "Backend (FastAPI)" },
     "5173": { "label": "Frontend (Vite)" },
     "8501": { "label": "Legacy Streamlit calculator" }
   },
-  "forwardPorts": [8000, 5173]
+  "forwardPorts": [8000, 5173, 8501]
 }

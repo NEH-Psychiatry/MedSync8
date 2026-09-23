@@ -24,7 +24,7 @@ The repository ships a shared workspace configuration under `.vscode/`:
 - **Recommended extensions** — Python, Pylance, ESLint, and Vitest Explorer (VS Code offers them on first open).
 - **Debug configurations** (Run and Debug panel) — `Backend: FastAPI (uvicorn)`, `Frontend: Vite dev server`, `Backend: pytest`, and a `Full stack: backend + frontend` compound that starts both.
 - **Tasks** (Terminal → Run Task) — install, lint, test, and build tasks per app, plus `All checks (CI parity)` mirroring the CI pipeline.
-- **Test discovery** — pytest is preconfigured against `backend/tests`; create the venv at `backend/.venv` (as in the quick start below) and VS Code picks it up.
+- **Test discovery** — pytest is preconfigured against `backend/tests`. Create the venv at `backend/.venv` and install the test requirements into it — `python -m venv backend/.venv && backend/.venv/bin/pip install -r backend/requirements-test.txt` — and VS Code picks it up. The quick start below installs `requirements.txt`, which does not include pytest.
 
 A dev container (`.devcontainer/`) provisions Python 3.11 + Node 20 with both apps' dependencies preinstalled, for Codespaces or the Dev Containers extension.
 

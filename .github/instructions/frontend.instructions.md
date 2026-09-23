@@ -4,7 +4,7 @@ applyTo: "frontend/**/*.js,frontend/**/*.jsx,frontend/**/*.css,frontend/**/*.htm
 
 # Frontend Rules
 
-- Stack: React 18 + Vite, plain JavaScript (no TypeScript). ESLint governs style — run `npm run lint`; do not request stylistic churn ESLint already covers.
+- Stack: React 19 + Vite, plain JavaScript (no TypeScript). ESLint governs style — run `npm run lint`; do not request stylistic churn ESLint already covers.
 - Keep components small and focused, matching the existing layout: presentational components in `src/components/`, state in `src/hooks/`, API access in `src/lib/api.js` only. Do not scatter `fetch` calls into components.
 - All backend access goes through the configured API base (`VITE_API_BASE`). Never hardcode URLs, API keys, or model names in frontend code — the backend proxies Anthropic precisely so no key ships to the browser.
 - Never log, persist, or transmit chat content anywhere except the backend API. Saved responses stay in the mechanisms already in place; introducing new storage or third-party calls for message content is a security change requiring explicit task scope.

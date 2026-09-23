@@ -1,6 +1,6 @@
 # MedSync8 Copilot Instructions
 
-Version 1.0.0 — 2026-08-16.
+Version 1.0.1 — 2026-09-23.
 
 This repository uses NEH enterprise AI governance. Follow these instructions for Copilot Chat, Copilot coding agent, Copilot code review, and repository-scoped AI assistance.
 
@@ -14,7 +14,7 @@ Two application tracks:
 
 - **Telepsychiatry assistant (current stack)**
   - `/backend` — Python 3.11+, FastAPI, Pydantic v2, local sentence-transformers embeddings (OpenAI optional), Anthropic proxy, Cloudflare Access JWT auth, hash-only audit logging.
-  - `/frontend` — React 18 + Vite, ESLint, Vitest; deployed to Cloudflare Pages.
+  - `/frontend` — React 19 + Vite, ESLint, Vitest; deployed to Cloudflare Pages.
   - `/corpus` — local RAG source documents (public federal regulation text only).
 - **Legacy Streamlit calculator** — `/med_sync_app_with_stripe.py`, `/sync_calculator.py`, tests in `/tests`.
 
@@ -106,4 +106,5 @@ Before proposing or finalizing a PR:
 
 ## Changelog
 
+- 1.0.1 (2026-09-23): Corrected the frontend stack from React 18 to React 19 here and in `.github/instructions/frontend.instructions.md`; `frontend/package.json` pins `react@^19.2.0`. Reported by Copilot code review on PR #10.
 - 1.0.0 (2026-08-16): Initial instruction set for MedSync8. Root file plus `AGENTS.md` and path-scoped rules for workflows, Python, frontend, docs, and tests. Skills rules omitted — this repository contains no `.skill` packages or SKILL.md files.
