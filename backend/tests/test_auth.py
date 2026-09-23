@@ -4,6 +4,7 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
+import httpx
 import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -239,11 +240,15 @@ def _stub_transport(monkeypatch, payloads):
             return False
 
         async def get(self, url: str) -> _Resp:
+            # Bind the payload index at call time. Reading len(fetches) after
+            # the await would let interleaved callers observe each other's
+            # appends and pick the wrong payload.
+            index = min(len(fetches), len(payloads) - 1)
             fetches.append(url)
             # Yield control so concurrent callers can interleave -- without this
             # the stampede the lock prevents would not be observable in a test.
             await asyncio.sleep(0.01)
-            return _Resp(payloads[min(len(fetches) - 1, len(payloads) - 1)])
+            return _Resp(payloads[index])
 
     monkeypatch.setattr(auth_module.httpx, "AsyncClient", _Client)
     return fetches
@@ -339,3 +344,66 @@ def test_token_signed_by_rotated_key_is_accepted(monkeypatch, rsa_keypair):
     assert claims["email"] == "user@example.com"
     assert fresh_cache.has_kid(new_pair["kid"])
     assert len(fetches) == 2
+
+
+def test_failed_forced_refetch_still_honors_floor(monkeypatch):
+    """Regression: an outage must not turn the refetch floor into a serialized
+    stampede.
+
+    ``_last_fetch`` used to be assigned only after the request, status check and
+    JSON parse all succeeded, so a failed refetch left the timestamp untouched.
+    Every queued caller then re-read a stale timestamp inside the lock and
+    retried the dead endpoint in turn -- 8 callers, 8 upstream requests, each
+    burning the full timeout, and every one of them raising even though usable
+    (if stale) keys were already cached.
+    """
+    import asyncio
+
+    attempts: list[str] = []
+
+    class _DeadResp:
+        def raise_for_status(self) -> None:
+            raise httpx.ConnectError("certs endpoint down")
+
+        def json(self) -> dict:  # pragma: no cover -- never reached
+            return {}
+
+    class _DeadClient:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def get(self, url: str) -> _DeadResp:
+            attempts.append(url)
+            await asyncio.sleep(0.01)
+            return _DeadResp()
+
+    fetches = _stub_transport(monkeypatch, [{"keys": [{"kid": "kid-1"}]}])
+    cache = auth_module._JWKSCache()
+    config = auth_module.AccessConfig(team_domain="acme", aud="aud")
+
+    async def scenario():
+        await cache.get(config)             # prime the cache while healthy
+        assert len(fetches) == 1
+        cache._last_fetch = 0               # age past the refetch floor
+        monkeypatch.setattr(auth_module.httpx, "AsyncClient", _DeadClient)
+        return await asyncio.gather(
+            *(cache.get(config, force=True) for _ in range(8)),
+            return_exceptions=True,
+        )
+
+    results = asyncio.run(scenario())
+
+    assert len(attempts) == 1, f"outage should cost one attempt, not {len(attempts)}"
+    raised = [r for r in results if isinstance(r, BaseException)]
+    # Pin the failure mode: without this the sole raiser could be any error
+    # (a NameError in this test, say) and the assertions below would still pass.
+    assert [type(r) for r in raised] == [httpx.ConnectError], raised
+    served = [r for r in results if not isinstance(r, BaseException)]
+    assert len(served) == 7, "waiters should fall back to the cached keys"
+    assert all(r["keys"][0]["kid"] == "kid-1" for r in served)

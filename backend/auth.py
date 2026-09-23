@@ -58,6 +58,8 @@ class _JWKSCache:
     def __init__(self) -> None:
         self._keys: dict[str, Any] | None = None
         self._expires: float = 0
+        # Time of the last fetch *attempt*, successful or not -- the floor has
+        # to hold during an outage too, not just after a successful refresh.
         self._last_fetch: float = 0
         self._lock = asyncio.Lock()
 
@@ -85,6 +87,13 @@ class _JWKSCache:
             cached = self._fresh(time.time(), force=force)
             if cached is not None:
                 return cached
+            # Stamp the *attempt*, not the success. If the certs endpoint is
+            # down, every queued caller would otherwise re-check an unchanged
+            # timestamp, still read as stale, and retry in turn -- an outage
+            # would serialize the stampede rather than stop it. Recording it
+            # here means later waiters honour the floor and fall back to the
+            # stale keys they already have.
+            self._last_fetch = time.time()
             async with httpx.AsyncClient(timeout=5.0) as client:
                 resp = await client.get(config.certs_url)
             resp.raise_for_status()
