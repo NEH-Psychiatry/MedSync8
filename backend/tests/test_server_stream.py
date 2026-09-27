@@ -221,3 +221,35 @@ def test_stream_without_text_emits_error_frame(client, stub_anthropic):
     frames = parse_sse(r.text)
     assert [e for e, _ in frames] == ["citations", "error"]
     assert frames[-1][1]["detail"] == "anthropic response missing text content"
+
+
+def test_stream_abandoned_before_first_frame_closes_stream_and_audits(client, stub_anthropic):
+    """Client disconnects before Starlette iterates the generator: the
+    response's background task must still close the Anthropic stream and
+    write an audit event -- no chat exchange may go unaudited."""
+    req = server_module.ChatRequest(
+        tool="chat",
+        messages=[{"role": "user", "content": "Draft a PDMP policy for Texas"}],
+        use_rag=False,
+    )
+    resp = server_module.chat_stream(req, claims={})
+
+    # The generator is never iterated (simulating an immediate disconnect);
+    # Starlette still runs the background task after the response ends.
+    assert resp.background is not None
+    resp.background.func()
+
+    assert stub_anthropic.last_stream.closed is True
+    event = audit_module.get_logger().recent(1)[0]
+    assert event["status"] == "error"
+    assert event["error_type"] == "_StreamFailure"
+
+
+def test_stream_background_cleanup_is_noop_after_normal_completion(client, stub_anthropic):
+    r = _post_stream(client, use_rag=False)
+    assert r.status_code == 200
+    # TestClient runs the background task after consuming the stream; the
+    # completed exchange must produce exactly one "ok" audit event.
+    events = audit_module.get_logger().recent(10)
+    assert len(events) == 1
+    assert events[0]["status"] == "ok"

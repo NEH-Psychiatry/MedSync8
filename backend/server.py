@@ -25,6 +25,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field, model_validator
+from starlette.background import BackgroundTask
 
 from .audit import (
     ChatAuditContext,
@@ -298,7 +299,11 @@ def chat_stream(req: ChatRequest, claims: dict = Depends(require_access)) -> Str
         with stack:
             raise
 
+    started = False
+
     def event_stream() -> Iterator[str]:
+        nonlocal started
+        started = True
         try:
             with stack:
                 yield _sse("citations", {"citations": [c.model_dump() for c in citations]})
@@ -321,10 +326,30 @@ def chat_stream(req: ChatRequest, claims: dict = Depends(require_access)) -> Str
         except _StreamFailure as e:
             yield _sse("error", {"detail": e.detail})
 
+    def close_if_never_started() -> None:
+        """Safety net run after the response finishes.
+
+        If the client disconnects before Starlette pulls the first item,
+        the generator body -- and its ``with stack`` teardown -- never
+        runs. Close the upstream Anthropic stream here and record the
+        audit event with status="error" so the exchange is never
+        unaudited. A no-op once the generator has started (the stack is
+        already closed by then).
+        """
+        if started:
+            return
+        log.warning("chat stream abandoned before any frame was sent")
+        try:
+            with stack:
+                raise _StreamFailure("client disconnected before streaming started")
+        except _StreamFailure:
+            pass
+
     return StreamingResponse(
         event_stream(),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        background=BackgroundTask(close_if_never_started),
     )
 
 
