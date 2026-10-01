@@ -42,8 +42,8 @@ jobs:
         env:
           VITE_API_BASE: ${{ vars.VITE_API_BASE }}
         run: |
-          if [ -z "$VITE_API_BASE" ] || [[ "$VITE_API_BASE" == http://localhost* ]]; then
-            echo "::error::VITE_API_BASE must be a non-local production URL"
+          if [[ "$VITE_API_BASE" != https://* ]]; then
+            echo "::error::VITE_API_BASE must be an explicit https:// production URL"
             exit 1
           fi
           npm run build

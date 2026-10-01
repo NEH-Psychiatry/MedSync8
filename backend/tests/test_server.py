@@ -53,6 +53,56 @@ def test_production_configuration_fails_closed(monkeypatch):
         server_module.validate_runtime_security()
 
 
+@pytest.mark.parametrize(
+    ("name", "value", "error"),
+    [
+        ("ANTHROPIC_API_KEY", None, "ANTHROPIC_API_KEY is required"),
+        ("CF_ACCESS_TEAM_DOMAIN", None, "CF_ACCESS_TEAM_DOMAIN is required"),
+        ("CF_ACCESS_AUD", None, "CF_ACCESS_AUD is required"),
+        ("AUDIT_SALT", audit_module.DEFAULT_AUDIT_SALT, "unique AUDIT_SALT"),
+        ("ALLOWED_ORIGINS", "", "production frontend origin"),
+        ("ALLOWED_ORIGINS", "*", "explicit https:// production origins"),
+        (
+            "ALLOWED_ORIGINS",
+            "http://localhost:5173",
+            "explicit https:// production origins",
+        ),
+        (
+            "ALLOWED_ORIGINS",
+            "http://127.0.0.1:8000",
+            "explicit https:// production origins",
+        ),
+        (
+            "ALLOWED_ORIGINS",
+            "http://prod.example.test",
+            "explicit https:// production origins",
+        ),
+        (
+            "ALLOWED_ORIGINS",
+            "https://replace-before-deploy.invalid",
+            "explicit https:// production origins",
+        ),
+    ],
+)
+def test_production_configuration_rejects_invalid_setting(
+    monkeypatch, name, value, error
+):
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "synthetic-test-key")
+    monkeypatch.setenv("CF_ACCESS_TEAM_DOMAIN", "example-team")
+    monkeypatch.setenv("CF_ACCESS_AUD", "synthetic-audience")
+    monkeypatch.setenv("AUDIT_SALT", "synthetic-unique-audit-salt")
+    monkeypatch.setenv("ALLOWED_ORIGINS", "https://assistant.example.test")
+    if value is None:
+        monkeypatch.delenv(name, raising=False)
+    else:
+        monkeypatch.setenv(name, value)
+
+    with pytest.raises(RuntimeError, match="unsafe production configuration") as exc:
+        server_module.validate_runtime_security()
+    assert error in str(exc.value)
+
+
 def test_production_configuration_accepts_required_controls(monkeypatch):
     monkeypatch.setenv("APP_ENV", "production")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "synthetic-test-key")
@@ -69,6 +119,15 @@ def test_development_configuration_remains_local(monkeypatch):
     monkeypatch.delenv("CF_ACCESS_AUD", raising=False)
 
     server_module.validate_runtime_security()
+
+
+def test_invalid_app_env_fails_closed(monkeypatch):
+    monkeypatch.setenv("APP_ENV", "staging")
+
+    with pytest.raises(
+        RuntimeError, match="APP_ENV must be development, test, or production"
+    ):
+        server_module.validate_runtime_security()
 
 
 def test_chat_returns_reply_and_citations(client, stub_anthropic):

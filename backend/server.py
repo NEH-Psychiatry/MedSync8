@@ -25,6 +25,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from .audit import (
     ChatAuditContext,
+    DEFAULT_AUDIT_SALT,
     get_logger as get_audit_logger,
     using_default_salt,
 )
@@ -65,7 +66,7 @@ def validate_runtime_security() -> None:
         errors.append("CF_ACCESS_AUD is required")
 
     audit_salt = os.environ.get("AUDIT_SALT", "").strip()
-    if not audit_salt or audit_salt == "medsync8-default-salt-change-me":
+    if not audit_salt or audit_salt == DEFAULT_AUDIT_SALT:
         errors.append("a unique AUDIT_SALT is required")
 
     origins = [
@@ -77,13 +78,16 @@ def validate_runtime_security() -> None:
         errors.append("ALLOWED_ORIGINS must contain the production frontend origin")
     elif any(
         origin == "*"
+        or not origin.startswith("https://")
         or origin.startswith("http://localhost")
         or origin.startswith("http://127.0.0.1")
         or origin.endswith(".invalid")
         or "replace-before-deploy" in origin
         for origin in origins
     ):
-        errors.append("ALLOWED_ORIGINS must not contain wildcards or local origins")
+        errors.append(
+            "ALLOWED_ORIGINS must contain only explicit https:// production origins"
+        )
 
     if errors:
         raise RuntimeError("unsafe production configuration: " + "; ".join(errors))
