@@ -172,6 +172,7 @@ class ChatAuditContext:
         self._start: float = 0.0
         self._reply_len: int = 0
         self._citations: list[dict[str, Any]] = []
+        self._emitted = False
 
     def set_result(
         self,
@@ -191,6 +192,10 @@ class ChatAuditContext:
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
+        # Keep the single-audit invariant here, independent of caller cleanup semantics.
+        if self._emitted:
+            return
+        self._emitted = True
         latency_ms = int((time.monotonic() - self._start) * 1000)
         event: dict[str, Any] = {
             "event": "chat",

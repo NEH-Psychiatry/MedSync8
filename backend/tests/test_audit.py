@@ -79,6 +79,20 @@ def test_audit_context_writes_metadata_only(tmp_path: Path):
     assert "latency_ms" in event
 
 
+def test_audit_context_emits_only_once_when_exited_twice(tmp_path: Path):
+    logger = audit.AuditLogger(path=tmp_path / "audit.log")
+
+    with audit.ChatAuditContext(
+        tool="chat",
+        user_query="synthetic test query",
+        claims=None,
+        logger=logger,
+    ) as ctx:
+        ctx.__exit__(None, None, None)
+
+    assert len(logger.recent()) == 1
+
+
 def test_audit_context_records_errors_without_message(tmp_path: Path):
     log_path = tmp_path / "audit.log"
     logger = audit.AuditLogger(path=log_path)
