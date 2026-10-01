@@ -5,6 +5,21 @@ carry their own in-file changelog (`.github/copilot-instructions.md`).
 
 ## Unreleased — branch `claude/update-codebase-vA58U`
 
+### Excel rate workbook connected
+- `scripts/rate_workbook_sync.py` reads the practice's rate-verification
+  workbook (`.xlsx`, Rates and Inputs sheets) with openpyxl: `--check`
+  reconciles every payer rate against the tracker catalogue (exit 1 on
+  mismatch), `--write-overrides` exports them in the `RATE_OVERRIDES_JSON`
+  shape with the workbook's source and evidence label, `--write-assumptions`
+  exports the planning inputs. Evidence status drives the confidence label
+  (official file → `verified_primary`, other → `verified_secondary`,
+  "Illustrative / editable" → never a rate). Non-catalogue codes are skipped
+  unless `--all`.
+- Tracker: new `RATE_OVERRIDES_FILE` source (read between the legacy
+  shorthand and inline `RATE_OVERRIDES_JSON`, which still wins), so the
+  exported file connects the workbook to the CLI, MCP tools and plugin.
+- Tests build a layout-faithful synthetic workbook; no binary fixture.
+
 ### Billing model rebuilt on real numbers — plugin 2.0.0 (breaking)
 - **Rates are explicit data, not factors.** Every (code, payer) amount is a
   `Rate(usd, confidence, source, note)` transcribed from the practice's

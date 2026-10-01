@@ -67,7 +67,9 @@ Rate provenance labels (weakest line governs a claim):
 
 Overrides: RATE_OVERRIDES_JSON='{"wi-medicaid": {"99484": {"usd": 41.28,
 "confidence": "portal_verified", "source": "ForwardHealth query 2026-09-21"}}}'
-(a bare number is accepted and labeled portal_verified). The legacy
+(a bare number is accepted and labeled portal_verified), or the same document
+in a file named by RATE_OVERRIDES_FILE — scripts/rate_workbook_sync.py writes
+one straight from the practice's Excel rate-verification workbook. The legacy
 WI_MEDICAID_RATES_JSON='{"99484": 41.28}' shorthand still works.
 
 Sources: see SOURCES below. Decision-support only.
@@ -442,10 +444,13 @@ APCM_MIRROR: dict[str, str] = {c.mirror_of: c.code for c in APCM_ADDON_CODES if 
 # ---------------------------------------------------------------------------
 
 def _parse_overrides(env: Mapping[str, str]) -> dict[str, dict[str, Rate]]:
-    """Read RATE_OVERRIDES_JSON (per payer) and the legacy WI_MEDICAID_RATES_JSON.
+    """Read rate overrides from the environment, weakest source first.
 
-    Malformed input is ignored with a warning — an override can only add or
-    replace a rate, never silently poison the table.
+    Sources, later ones winning: the legacy WI_MEDICAID_RATES_JSON shorthand,
+    RATE_OVERRIDES_FILE (a JSON file — typically written from the practice's
+    Excel rate workbook by scripts/rate_workbook_sync.py), then
+    RATE_OVERRIDES_JSON inline. Malformed input is ignored with a warning — an
+    override can only add or replace a rate, never silently poison the table.
     """
     out: dict[str, dict[str, Rate]] = {p: {} for p in PAYERS}
 
@@ -470,10 +475,19 @@ def _parse_overrides(env: Mapping[str, str]) -> dict[str, dict[str, Rate]]:
             return
         out[payer][str(code)] = rate
 
-    for var, wrap in (("WI_MEDICAID_RATES_JSON", True), ("RATE_OVERRIDES_JSON", False)):
-        raw = env.get(var, "")
-        if not raw:
-            continue
+    sources: list[tuple[str, str, bool]] = []   # (var, raw json, wrap-as-wi-medicaid)
+    if env.get("WI_MEDICAID_RATES_JSON"):
+        sources.append(("WI_MEDICAID_RATES_JSON", env["WI_MEDICAID_RATES_JSON"], True))
+    if env.get("RATE_OVERRIDES_FILE"):
+        try:
+            with open(env["RATE_OVERRIDES_FILE"], encoding="utf-8") as fh:
+                sources.append(("RATE_OVERRIDES_FILE", fh.read(), False))
+        except OSError as exc:
+            print(f"warning: RATE_OVERRIDES_FILE unreadable ({exc}) — ignoring", file=sys.stderr)
+    if env.get("RATE_OVERRIDES_JSON"):
+        sources.append(("RATE_OVERRIDES_JSON", env["RATE_OVERRIDES_JSON"], False))
+
+    for var, raw, wrap in sources:
         try:
             data = json.loads(raw)
             if not isinstance(data, Mapping):

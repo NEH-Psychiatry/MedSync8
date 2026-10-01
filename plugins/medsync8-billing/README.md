@@ -24,6 +24,7 @@ Requires `python3` with the `mcp` package (`pip install mcp`).
 Payer models: `medicare-wi` (Medicare PFS, Wisconsin locality, CMS CY2026 RVU26C), `medicare-fqhc` (CMS designated RHC/FQHC care-coordination rates), `wi-medicaid` (ForwardHealth fee-for-service max fees, 2026-09-05 snapshot). Slots without a verified amount are unpriced, never estimated.
 
 - `RATE_OVERRIDES_JSON` — add or replace a rate per payer with its own provenance, e.g. `{"wi-medicaid": {"99484": {"usd": 41.28, "confidence": "verified_primary", "source": "ForwardHealth query 2026-09-21"}}}`; a bare number is accepted and labeled `portal_verified`.
+- `RATE_OVERRIDES_FILE` — the same document in a file. In the MedSync8 repo, `scripts/rate_workbook_sync.py --workbook <xlsx> --write-overrides rates.json` writes it straight from the practice's Excel rate-verification workbook (and `--check` reconciles the workbook against the catalogue).
 - `WI_MEDICAID_RATES_JSON` — legacy shorthand for the `wi-medicaid` block, e.g. `{"99484": 41.28}`.
 
 ## Source of truth
