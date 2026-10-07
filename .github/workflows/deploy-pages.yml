@@ -42,8 +42,34 @@ jobs:
         env:
           VITE_API_BASE: ${{ vars.VITE_API_BASE }}
         run: |
-          if [[ "$VITE_API_BASE" != https://* ]]; then
-            echo "::error::VITE_API_BASE must be an explicit https:// production URL"
+          if ! python3 - "$VITE_API_BASE" <<'PY'
+          import ipaddress
+          import sys
+          from urllib.parse import urlsplit
+
+          value = sys.argv[1]
+          try:
+              hostname = urlsplit(value).hostname
+              if not hostname:
+                  raise ValueError("missing hostname")
+              hostname = hostname.rstrip(".").lower()
+              local = hostname == "localhost" or hostname.endswith(".localhost")
+              try:
+                  address = ipaddress.ip_address(hostname)
+                  local = local or address.is_loopback or bool(
+                      address.ipv4_mapped and address.ipv4_mapped.is_loopback
+                  )
+              except ValueError:
+                  pass
+          except ValueError:
+              hostname = None
+              local = True
+
+          if not value.startswith("https://") or not hostname or local:
+              raise SystemExit(1)
+          PY
+          then
+            echo "::error::VITE_API_BASE must be an explicit https:// production URL, not localhost or a loopback IP"
             exit 1
           fi
           npm run build

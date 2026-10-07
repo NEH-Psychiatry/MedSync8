@@ -14,7 +14,9 @@ from __future__ import annotations
 import logging
 import os
 from contextlib import asynccontextmanager
+from ipaddress import ip_address
 from typing import Literal
+from urllib.parse import urlsplit
 
 import anthropic
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -48,6 +50,26 @@ MAX_MESSAGES = int(os.environ.get("CHAT_MAX_MESSAGES", "50"))
 MAX_MESSAGE_CHARS = int(os.environ.get("CHAT_MAX_MESSAGE_CHARS", "20000"))
 
 
+def _is_local_origin(origin: str) -> bool:
+    try:
+        hostname = urlsplit(origin).hostname
+    except ValueError:
+        return True
+    if not hostname:
+        return True
+
+    hostname = hostname.rstrip(".").lower()
+    if hostname == "localhost" or hostname.endswith(".localhost"):
+        return True
+    try:
+        address = ip_address(hostname)
+    except ValueError:
+        return False
+    return address.is_loopback or bool(
+        address.ipv4_mapped and address.ipv4_mapped.is_loopback
+    )
+
+
 def validate_runtime_security() -> None:
     """Reject incomplete production configuration before serving traffic."""
 
@@ -79,8 +101,7 @@ def validate_runtime_security() -> None:
     elif any(
         origin == "*"
         or not origin.startswith("https://")
-        or origin.startswith("http://localhost")
-        or origin.startswith("http://127.0.0.1")
+        or _is_local_origin(origin)
         or origin.endswith(".invalid")
         or "replace-before-deploy" in origin
         for origin in origins

@@ -74,6 +74,21 @@ def test_production_configuration_fails_closed(monkeypatch):
         ),
         (
             "ALLOWED_ORIGINS",
+            "https://localhost:3000",
+            "explicit https:// production origins",
+        ),
+        (
+            "ALLOWED_ORIGINS",
+            "https://127.0.0.2:8443",
+            "explicit https:// production origins",
+        ),
+        (
+            "ALLOWED_ORIGINS",
+            "https://[::1]:8443",
+            "explicit https:// production origins",
+        ),
+        (
+            "ALLOWED_ORIGINS",
             "http://prod.example.test",
             "explicit https:// production origins",
         ),
