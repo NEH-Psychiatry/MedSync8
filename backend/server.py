@@ -14,7 +14,9 @@ from __future__ import annotations
 import logging
 import os
 from contextlib import asynccontextmanager
+from ipaddress import ip_address
 from typing import Literal
+from urllib.parse import urlsplit
 
 import anthropic
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -25,6 +27,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from .audit import (
     ChatAuditContext,
+    DEFAULT_AUDIT_SALT,
     get_logger as get_audit_logger,
     using_default_salt,
 )
@@ -47,6 +50,26 @@ MAX_MESSAGES = int(os.environ.get("CHAT_MAX_MESSAGES", "50"))
 MAX_MESSAGE_CHARS = int(os.environ.get("CHAT_MAX_MESSAGE_CHARS", "20000"))
 
 
+def _is_local_origin(origin: str) -> bool:
+    try:
+        hostname = urlsplit(origin).hostname
+    except ValueError:
+        return True
+    if not hostname:
+        return True
+
+    hostname = hostname.rstrip(".").lower()
+    if hostname == "localhost" or hostname.endswith(".localhost"):
+        return True
+    try:
+        address = ip_address(hostname)
+    except ValueError:
+        return False
+    return address.is_loopback or bool(
+        address.ipv4_mapped and address.ipv4_mapped.is_loopback
+    )
+
+
 def validate_runtime_security() -> None:
     """Reject incomplete production configuration before serving traffic."""
 
@@ -65,7 +88,7 @@ def validate_runtime_security() -> None:
         errors.append("CF_ACCESS_AUD is required")
 
     audit_salt = os.environ.get("AUDIT_SALT", "").strip()
-    if not audit_salt or audit_salt == "medsync8-default-salt-change-me":
+    if not audit_salt or audit_salt == DEFAULT_AUDIT_SALT:
         errors.append("a unique AUDIT_SALT is required")
 
     origins = [
@@ -77,13 +100,15 @@ def validate_runtime_security() -> None:
         errors.append("ALLOWED_ORIGINS must contain the production frontend origin")
     elif any(
         origin == "*"
-        or origin.startswith("http://localhost")
-        or origin.startswith("http://127.0.0.1")
+        or not origin.startswith("https://")
+        or _is_local_origin(origin)
         or origin.endswith(".invalid")
         or "replace-before-deploy" in origin
         for origin in origins
     ):
-        errors.append("ALLOWED_ORIGINS must not contain wildcards or local origins")
+        errors.append(
+            "ALLOWED_ORIGINS must contain only explicit https:// production origins"
+        )
 
     if errors:
         raise RuntimeError("unsafe production configuration: " + "; ".join(errors))

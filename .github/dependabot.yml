@@ -4,31 +4,26 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    reviewers: [cvassat]
     open-pull-requests-limit: 5
 
   - package-ecosystem: pip
     directory: /backend
     schedule:
       interval: weekly
-    reviewers: [cvassat]
     open-pull-requests-limit: 5
 
   - package-ecosystem: npm
     directory: /frontend
     schedule:
       interval: weekly
-    reviewers: [cvassat]
     open-pull-requests-limit: 5
 
   - package-ecosystem: docker
     directory: /
     schedule:
       interval: monthly
-    reviewers: [cvassat]
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: monthly
-    reviewers: [cvassat]
