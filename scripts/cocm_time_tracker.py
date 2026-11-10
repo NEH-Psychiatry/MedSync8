@@ -55,7 +55,9 @@ Payer rate models (--payer)
                  physician services). Rendering provider type and POS must
                  match. A psychiatrist cannot be the Wisconsin CoCM billing
                  practitioner (consultant role only). CHCs use the T1015
-                 PPS pathway instead of these fees.
+                 PPS pathway instead of these fees. State APRN independent
+                 practice (2025 Wis. Act 17, eff. 2026-09-01) does not change
+                 payer billing eligibility.
 
 Rate provenance labels (weakest line governs a claim):
   portal_verified    this practice's contract / portal extract
@@ -104,6 +106,7 @@ SOURCES: tuple[str, ...] = (
     "CMS RHC/FQHC CY2026 non-facility payment rates",
     "ForwardHealth max-fee snapshot MEDSV 2026-09-05",
     "ForwardHealth Update 2026-07 (Mar 2026)",
+    "2025 Wisconsin Act 17 — APRN Modernization (eff. 2026-09-01)",
     "NEH CoCM consolidated workbook (2026-09-20)",
     "NEH WI CoCM rate verification memo V1.0 (2026-09-07)",
     "NACHC APCM Reimbursement Tip Sheet (Mar 2026)",
@@ -173,9 +176,13 @@ PAYER_MODELS: dict[str, PayerModel] = {
         "ForwardHealth interactive max-fee schedule, official snapshot "
         "MEDSV_max_fee_20260905.csv (physician services)",
         "Rendering provider type / POS must match. A psychiatrist cannot be the "
-        "WI CoCM billing practitioner (consultant only; Online Handbook #22557). "
-        "CHCs bill CoCM through the T1015 PPS pathway, not these fees. HMOs must "
-        "cover at least the fee-for-service benefit (Update 2026-07).",
+        "WI CoCM billing practitioner (consultant only; Online Handbook #22557 CoCM, "
+        "#23217 BHI). CHCs bill CoCM through the T1015 PPS pathway, not these fees. "
+        "HMOs must cover at least the fee-for-service benefit (Update 2026-07). "
+        "APRN independent-practice authority under 2025 Wis. Act 17 (eff. 2026-09-01) "
+        "changes state scope-of-practice law only — it does not by itself make an NP "
+        "an eligible billing practitioner under ForwardHealth, Medicare, or a "
+        "commercial contract; payer enrollment and rendering-provider rules govern.",
     ),
 }
 

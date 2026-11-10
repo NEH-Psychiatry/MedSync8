@@ -5,6 +5,19 @@ carry their own in-file changelog (`.github/copilot-instructions.md`).
 
 ## Unreleased — branch `claude/update-codebase-vA58U`
 
+### Wisconsin policy documents incorporated
+- RAG corpus gains `corpus/wisconsin/`: ForwardHealth Update 2026-07 and the
+  2025 Wisconsin Act 17 APRN Modernization summary, transcribed with
+  provenance headers, plus a key-points file. Public documents, no PHI.
+- `wi-medicaid` payer caveat now cites Online Handbook #23217 for BHI and
+  states that APRN independent-practice authority under Act 17 (effective
+  2026-09-01) does not change payer billing eligibility; Act 17 added to
+  `SOURCES`. No rates or thresholds changed.
+- `docs/wi-aprn-act-17-impact.md` maps the Act to the billing model, the
+  credentialing alert, and the practice's collaboration agreements.
+- Root workbench: three new npm advisories (body-parser, qs, vite 8.0–8.1.5)
+  cleared; audit at zero.
+
 ### Excel rate workbook connected
 - `scripts/rate_workbook_sync.py` reads the practice's rate-verification
   workbook (`.xlsx`, Rates and Inputs sheets) with openpyxl: `--check`
